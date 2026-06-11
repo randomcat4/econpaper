@@ -11,6 +11,7 @@ from .incremental_rerun import write_incremental_rerun
 from .intake import write_intake_profile
 from .linting import run_lint
 from .numeric_renderer import write_numeric_rendering
+from .release_gate import write_release_gate
 from .run_validation import write_run_validation
 from .section_writer import write_sections
 from .table_generator import write_publication_table
@@ -132,6 +133,16 @@ def _cmd_rerun(args: argparse.Namespace) -> int:
         updated_pack_dir=args.updated_pack,
         out_dir=args.out,
         allow_regenerate_protected=args.allow_regenerate_protected,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_release_gate(args: argparse.Namespace) -> int:
+    result = write_release_gate(
+        pack_dir=args.pack_dir,
+        human_eval_path=args.human_eval,
+        out_dir=args.out,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -263,6 +274,15 @@ def build_parser() -> argparse.ArgumentParser:
     rerun.add_argument("--out", required=True, type=Path)
     rerun.add_argument("--allow-regenerate-protected", action="store_true")
     rerun.set_defaults(func=_cmd_rerun)
+
+    release_gate = sub.add_parser(
+        "release-gate",
+        help="Run v3 automated and human-evaluation release gate checks.",
+    )
+    release_gate.add_argument("--pack-dir", required=True, type=Path)
+    release_gate.add_argument("--human-eval", type=Path)
+    release_gate.add_argument("--out", required=True, type=Path)
+    release_gate.set_defaults(func=_cmd_release_gate)
 
     return parser
 
