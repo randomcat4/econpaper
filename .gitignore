@@ -16,6 +16,7 @@ env/
 !.env.example
 
 outputs/
+reports/
 dist/
 build/
 *.egg-info/
