@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .claim_ledger import write_claim_ledger
 from .coherence import write_global_coherence
+from .design_profiler import write_design_profile
 from .evidence import write_evidence_ledger
 from .incremental_rerun import write_incremental_rerun
 from .intake import write_intake_profile
@@ -148,6 +149,18 @@ def _cmd_release_gate(args: argparse.Namespace) -> int:
     return 1 if result.has_hard_blocks else 0
 
 
+def _cmd_design(args: argparse.Namespace) -> int:
+    result = write_design_profile(
+        intake_profile_path=args.intake_profile,
+        evidence_ledger_path=args.evidence_ledger,
+        run_validation_path=args.run_validation,
+        author_amendments_path=args.author_amendments,
+        out_dir=args.out,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="econpaper")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -283,6 +296,17 @@ def build_parser() -> argparse.ArgumentParser:
     release_gate.add_argument("--human-eval", type=Path)
     release_gate.add_argument("--out", required=True, type=Path)
     release_gate.set_defaults(func=_cmd_release_gate)
+
+    design = sub.add_parser(
+        "design",
+        help="Build a declare-and-confirm v3 design_profile.json from intake and artifacts.",
+    )
+    design.add_argument("--intake-profile", required=True, type=Path)
+    design.add_argument("--evidence-ledger", type=Path)
+    design.add_argument("--run-validation", type=Path)
+    design.add_argument("--author-amendments", type=Path)
+    design.add_argument("--out", required=True, type=Path)
+    design.set_defaults(func=_cmd_design)
 
     return parser
 

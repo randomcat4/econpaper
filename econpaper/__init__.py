@@ -2,6 +2,7 @@
 
 from .claim_ledger import ClaimLedgerBuildResult, build_claim_ledger, write_claim_ledger
 from .coherence import CoherenceResult, run_global_coherence, write_global_coherence
+from .design_profiler import DesignProfileResult, build_design_profile, write_design_profile
 from .evidence import EvidenceBuildResult, build_evidence_ledger, write_evidence_ledger
 from .incremental_rerun import IncrementalRerunResult, run_incremental_rerun, write_incremental_rerun
 from .intake import IntakeBuildResult, build_intake_profile, write_intake_profile
@@ -15,6 +16,7 @@ from .table_generator import TableGenerationResult, generate_publication_table, 
 __all__ = [
     "ClaimLedgerBuildResult",
     "CoherenceResult",
+    "DesignProfileResult",
     "EvidenceBuildResult",
     "IncrementalRerunResult",
     "IntakeBuildResult",
@@ -25,6 +27,7 @@ __all__ = [
     "SectionWriterResult",
     "TableGenerationResult",
     "build_claim_ledger",
+    "build_design_profile",
     "build_evidence_ledger",
     "build_intake_profile",
     "generate_publication_table",
@@ -36,6 +39,7 @@ __all__ = [
     "run_release_gate",
     "validate_run_dir",
     "write_claim_ledger",
+    "write_design_profile",
     "write_evidence_ledger",
     "write_global_coherence",
     "write_incremental_rerun",
