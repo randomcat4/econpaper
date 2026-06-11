@@ -13,6 +13,7 @@ from .incremental_rerun import write_incremental_rerun
 from .intake import write_intake_profile
 from .linting import run_lint
 from .numeric_renderer import write_numeric_rendering
+from .quality_suite import write_quality_suite_manifest
 from .release_gate import write_release_gate
 from .run_validation import write_run_validation
 from .section_writer import write_sections
@@ -192,6 +193,12 @@ def _cmd_write(args: argparse.Namespace) -> int:
     return 1 if result.has_hard_blocks else 0
 
 
+def _cmd_quality_suite(args: argparse.Namespace) -> int:
+    result = write_quality_suite_manifest(out_dir=args.out)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="econpaper")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -362,6 +369,13 @@ def build_parser() -> argparse.ArgumentParser:
     write.add_argument("--out", required=True, type=Path)
     write.add_argument("--latex-command", default="pdflatex")
     write.set_defaults(func=_cmd_write)
+
+    quality_suite = sub.add_parser(
+        "quality-suite",
+        help="Emit the v3 false-confidence and Q-series quality-suite manifest.",
+    )
+    quality_suite.add_argument("--out", required=True, type=Path)
+    quality_suite.set_defaults(func=_cmd_quality_suite)
 
     return parser
 

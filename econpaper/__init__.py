@@ -9,6 +9,7 @@ from .incremental_rerun import IncrementalRerunResult, run_incremental_rerun, wr
 from .intake import IntakeBuildResult, build_intake_profile, write_intake_profile
 from .linting import LintReport, run_lint
 from .numeric_renderer import NumericRenderingResult, render_numeric_template, write_numeric_rendering
+from .quality_suite import QualitySuiteResult, build_quality_suite_manifest, write_quality_suite_manifest
 from .release_gate import ReleaseGateResult, run_release_gate, write_release_gate
 from .run_validation import RunValidationReport, validate_run_dir, write_run_validation
 from .section_writer import SectionWriterResult, generate_sections, write_sections
@@ -27,6 +28,7 @@ __all__ = [
     "LintReport",
     "NumericRenderingResult",
     "ReleaseGateResult",
+    "QualitySuiteResult",
     "RunValidationReport",
     "SectionWriterResult",
     "TableGenerationResult",
@@ -36,6 +38,7 @@ __all__ = [
     "build_design_profile",
     "build_evidence_ledger",
     "build_intake_profile",
+    "build_quality_suite_manifest",
     "compile_pack",
     "generate_publication_table",
     "generate_sections",
@@ -54,6 +57,7 @@ __all__ = [
     "write_intake_profile",
     "write_manuscript_pack",
     "write_numeric_rendering",
+    "write_quality_suite_manifest",
     "write_release_gate",
     "write_publication_table",
     "write_run_validation",
