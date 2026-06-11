@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .intake import write_intake_profile
 from .linting import run_lint
 from .run_validation import write_run_validation
 
@@ -24,6 +25,22 @@ def _cmd_lint(args: argparse.Namespace) -> int:
     )
     print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
     return 1 if report.has_hard_blocks else 0
+
+
+def _cmd_intake(args: argparse.Namespace) -> int:
+    result = write_intake_profile(
+        out_dir=args.out,
+        answers_path=args.answers,
+        spec_path=args.spec,
+        research_context_path=args.research_context,
+        literature_notes_path=args.literature_notes,
+        target_venue=args.target_venue,
+        preferred_contribution=args.preferred_contribution,
+        project_title=args.project_title,
+        field=args.field,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,6 +65,21 @@ def build_parser() -> argparse.ArgumentParser:
     lint.add_argument("--out", required=True, type=Path)
     lint.add_argument("--author-overrides", type=Path)
     lint.set_defaults(func=_cmd_lint)
+
+    intake = sub.add_parser(
+        "intake",
+        help="Build a v3 intake_profile.json from author-supplied interview answers.",
+    )
+    intake.add_argument("--answers", type=Path, help="Structured interview answers in JSON or YAML.")
+    intake.add_argument("--spec", type=Path, help="Optional author spec in JSON or YAML.")
+    intake.add_argument("--research-context", type=Path, help="Optional author-provided research_context.md.")
+    intake.add_argument("--literature-notes", type=Path, help="Optional author-provided literature_notes.md.")
+    intake.add_argument("--target-venue", help="Target venue override.")
+    intake.add_argument("--preferred-contribution", help="Author's preferred one-sentence contribution.")
+    intake.add_argument("--project-title", help="Working title override.")
+    intake.add_argument("--field", help="Field override.")
+    intake.add_argument("--out", required=True, type=Path)
+    intake.set_defaults(func=_cmd_intake)
 
     return parser
 
