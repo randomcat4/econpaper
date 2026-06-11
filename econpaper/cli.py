@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .claim_ledger import write_claim_ledger
+from .coherence import write_global_coherence
 from .evidence import write_evidence_ledger
 from .intake import write_intake_profile
 from .linting import run_lint
@@ -107,6 +108,17 @@ def _cmd_sections(args: argparse.Namespace) -> int:
         intake_profile_path=args.intake_profile,
         citation_index_path=args.citation_index,
         table_path=args.table_path,
+        out_dir=args.out,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_coherence(args: argparse.Namespace) -> int:
+    result = write_global_coherence(
+        sections_dir=args.sections_dir,
+        claim_ledger_path=args.claim_ledger,
+        table_paths=args.table_path,
         out_dir=args.out,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
@@ -219,6 +231,16 @@ def build_parser() -> argparse.ArgumentParser:
     sections.add_argument("--table-path", type=Path)
     sections.add_argument("--out", required=True, type=Path)
     sections.set_defaults(func=_cmd_sections)
+
+    coherence = sub.add_parser(
+        "coherence",
+        help="Run global manuscript coherence checks and build consolidated AUTHOR_REPORT.md.",
+    )
+    coherence.add_argument("--sections-dir", required=True, type=Path)
+    coherence.add_argument("--claim-ledger", required=True, type=Path)
+    coherence.add_argument("--table-path", action="append", type=Path)
+    coherence.add_argument("--out", required=True, type=Path)
+    coherence.set_defaults(func=_cmd_coherence)
 
     return parser
 
