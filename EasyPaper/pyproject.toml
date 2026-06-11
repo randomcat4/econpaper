@@ -66,4 +66,3 @@ include = ["easypaper", "easypaper.*", "src", "src.*"]
 
 [tool.setuptools.package-data]
 "src.skills.builtin" = ["**/*.yaml"]
-"src.prompts" = ["**/*.txt"]
