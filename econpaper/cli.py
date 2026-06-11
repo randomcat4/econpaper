@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .evidence import write_evidence_ledger
 from .intake import write_intake_profile
 from .linting import run_lint
 from .run_validation import write_run_validation
@@ -38,6 +39,18 @@ def _cmd_intake(args: argparse.Namespace) -> int:
         preferred_contribution=args.preferred_contribution,
         project_title=args.project_title,
         field=args.field,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_evidence(args: argparse.Namespace) -> int:
+    result = write_evidence_ledger(
+        run_dir=args.run_dir,
+        out_dir=args.out,
+        intake_profile_path=args.intake_profile,
+        model_table_paths=args.model_table,
+        summary_stats_path=args.summary_stats,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -80,6 +93,22 @@ def build_parser() -> argparse.ArgumentParser:
     intake.add_argument("--field", help="Field override.")
     intake.add_argument("--out", required=True, type=Path)
     intake.set_defaults(func=_cmd_intake)
+
+    evidence = sub.add_parser(
+        "evidence",
+        help="Build a v3 cell-level evidence_ledger.json from structured skill4econ model tables.",
+    )
+    evidence.add_argument("--run-dir", required=True, type=Path)
+    evidence.add_argument("--out", required=True, type=Path)
+    evidence.add_argument("--intake-profile", type=Path)
+    evidence.add_argument(
+        "--model-table",
+        action="append",
+        type=Path,
+        help="Structured model_table.csv/json. May be passed multiple times; defaults to discovery in run-dir.",
+    )
+    evidence.add_argument("--summary-stats", type=Path)
+    evidence.set_defaults(func=_cmd_evidence)
 
     return parser
 
