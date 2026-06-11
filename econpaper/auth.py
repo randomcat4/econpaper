@@ -430,7 +430,12 @@ def _subscription_status_for_provider(
     timeout: float,
     command_runner: CommandRunner | None,
 ) -> dict[str, Any]:
-    cli_path = shutil.which(spec.cli_name)
+    command_candidates = (
+        [(shutil.which(spec.cli_name) or spec.cli_name, spec.status_command)]
+        if command_runner
+        else _subscription_command_candidates(spec)
+    )
+    cli_path = command_candidates[0][0] if command_candidates else None
     detail: dict[str, Any] = {
         "display_name": spec.display_name,
         "configured": False,
@@ -444,14 +449,53 @@ def _subscription_status_for_provider(
         detail.update({"status": "missing_cli", "message": f"`{spec.cli_name}` was not found on PATH."})
         return detail
     runner = command_runner or _run_command
-    try:
-        proc = runner(spec.status_command, timeout)
-    except subprocess.TimeoutExpired:
-        detail.update({"status": "status_timeout", "message": f"`{spec.cli_name}` status command timed out."})
+    last_detail: dict[str, Any] | None = None
+    attempted = 0
+    for candidate_path, command in command_candidates:
+        attempted += 1
+        attempt = dict(detail)
+        attempt["cli_path"] = candidate_path
+        try:
+            proc = runner(command, timeout)
+        except subprocess.TimeoutExpired:
+            attempt.update({"status": "status_timeout", "message": f"`{spec.cli_name}` status command timed out."})
+            last_detail = attempt
+            continue
+        except Exception as exc:
+            attempt.update({"status": "status_error", "message": str(exc)})
+            last_detail = attempt
+            continue
+        parsed = _subscription_detail_from_status_process(spec, attempt, proc)
+        last_detail = parsed
+        if parsed.get("configured"):
+            if len(command_candidates) > 1:
+                parsed["attempted_cli_count"] = attempted
+            return parsed
+    if last_detail is None:
+        detail.update({"status": "missing_cli", "message": f"`{spec.cli_name}` was not found on PATH."})
         return detail
+    if len(command_candidates) > 1:
+        last_detail["attempted_cli_count"] = len(command_candidates)
+    return last_detail
+
+
+def _subscription_detail_from_status_process(
+    spec: SubscriptionProviderSpec,
+    detail: dict[str, Any],
+    proc: subprocess.CompletedProcess[str],
+) -> dict[str, Any]:
+    try:
+        return _parse_subscription_status_process(spec, detail, proc)
     except Exception as exc:
         detail.update({"status": "status_error", "message": str(exc)})
         return detail
+
+
+def _parse_subscription_status_process(
+    spec: SubscriptionProviderSpec,
+    detail: dict[str, Any],
+    proc: subprocess.CompletedProcess[str],
+) -> dict[str, Any]:
     stdout = (proc.stdout or "").strip()
     stderr = (proc.stderr or "").strip()
     combined = "\n".join(part for part in [stdout, stderr] if part).strip()
@@ -491,6 +535,62 @@ def _subscription_status_for_provider(
         return detail
     detail.update({"status": "unsupported", "message": "Unsupported subscription provider."})
     return detail
+
+
+def _subscription_command_candidates(spec: SubscriptionProviderSpec) -> list[tuple[str | None, tuple[str, ...]]]:
+    paths = _subscription_cli_candidates(spec)
+    return [(path, (path, *spec.status_command[1:])) for path in paths]
+
+
+def _subscription_cli_candidates(spec: SubscriptionProviderSpec) -> list[str]:
+    candidates: list[str] = []
+    path_cli = shutil.which(spec.cli_name)
+    if path_cli:
+        candidates.append(path_cli)
+
+    if os.name == "nt" and spec.name == "codex":
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        if local_appdata:
+            bin_root = Path(local_appdata) / "OpenAI" / "Codex" / "bin"
+            if bin_root.exists():
+                codex_bins = sorted(
+                    bin_root.glob("*/codex.exe"),
+                    key=lambda path: path.stat().st_mtime,
+                    reverse=True,
+                )
+                candidates.extend(str(path) for path in codex_bins)
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            npm_root = Path(appdata) / "npm"
+            candidates.extend(
+                str(path)
+                for path in [
+                    npm_root / "codex.cmd",
+                    npm_root / "codex.ps1",
+                    npm_root
+                    / "node_modules"
+                    / "@openai"
+                    / "codex"
+                    / "node_modules"
+                    / "@openai"
+                    / "codex-win32-x64"
+                    / "vendor"
+                    / "x86_64-pc-windows-msvc"
+                    / "bin"
+                    / "codex.exe",
+                ]
+                if path.exists()
+            )
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = os.path.normcase(os.path.abspath(candidate))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
 
 
 def _run_command(args: tuple[str, ...], timeout: float) -> subprocess.CompletedProcess[str]:

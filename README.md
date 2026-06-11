@@ -52,7 +52,7 @@ python -m pytest -q
 Expected at the latest checkpoint:
 
 ```text
-117 passed
+118 passed
 ```
 
 ## Core CLI

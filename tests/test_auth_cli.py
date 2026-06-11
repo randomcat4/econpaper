@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from econpaper import auth as auth_module
 from econpaper.auth import auth_status, subscription_status, login_provider, verify_provider, verify_subscription
 
 
@@ -125,6 +126,27 @@ def test_verify_codex_subscription_uses_chatgpt_login_without_api_key() -> None:
     assert result.subscriptions["codex"]["auth_method"] == "chatgpt"
     assert result.verification["live_model_request_attempted"] is False
     assert captured["args"] == ("codex", "-c", 'service_tier="fast"', "login", "status")
+
+
+def test_codex_subscription_candidates_include_desktop_cache(tmp_path: Path, monkeypatch) -> None:
+    local_appdata = tmp_path / "Local"
+    desktop_bin = local_appdata / "OpenAI" / "Codex" / "bin" / "hash" / "codex.exe"
+    desktop_bin.parent.mkdir(parents=True)
+    desktop_bin.write_text("", encoding="utf-8")
+    bad_path = str(tmp_path / "WindowsApps" / "OpenAI.Codex" / "codex.exe")
+
+    monkeypatch.setattr(auth_module.os, "name", "nt", raising=False)
+    monkeypatch.setattr(auth_module.shutil, "which", lambda name: bad_path if name == "codex" else None)
+    monkeypatch.setenv("LOCALAPPDATA", str(local_appdata))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+
+    candidates = auth_module._subscription_command_candidates(auth_module.SUBSCRIPTION_PROVIDERS["codex"])
+    paths = [path for path, _ in candidates]
+    commands = [command for _, command in candidates]
+
+    assert paths[0] == bad_path
+    assert str(desktop_bin) in paths
+    assert (str(desktop_bin), "-c", 'service_tier="fast"', "login", "status") in commands
 
 
 def test_verify_claude_code_subscription_redacts_account_identity() -> None:
