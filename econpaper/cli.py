@@ -7,6 +7,7 @@ from pathlib import Path
 from .evidence import write_evidence_ledger
 from .intake import write_intake_profile
 from .linting import run_lint
+from .numeric_renderer import write_numeric_rendering
 from .run_validation import write_run_validation
 
 
@@ -51,6 +52,18 @@ def _cmd_evidence(args: argparse.Namespace) -> int:
         intake_profile_path=args.intake_profile,
         model_table_paths=args.model_table,
         summary_stats_path=args.summary_stats,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_render_numbers(args: argparse.Namespace) -> int:
+    result = write_numeric_rendering(
+        args.template,
+        evidence_ledger_path=args.evidence_ledger,
+        slots_path=args.slots,
+        out_dir=args.out,
+        allow_raw_numbers=args.allow_raw_numbers,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -109,6 +122,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evidence.add_argument("--summary-stats", type=Path)
     evidence.set_defaults(func=_cmd_evidence)
+
+    render_numbers = sub.add_parser(
+        "render-numbers",
+        help="Render manuscript numeric placeholders deterministically from an evidence ledger.",
+    )
+    render_numbers.add_argument("--template", required=True, type=Path)
+    render_numbers.add_argument("--evidence-ledger", required=True, type=Path)
+    render_numbers.add_argument("--slots", type=Path, help="JSON mapping placeholders to evidence items.")
+    render_numbers.add_argument("--out", required=True, type=Path)
+    render_numbers.add_argument(
+        "--allow-raw-numbers",
+        action="store_true",
+        help="Permit raw numeric prose in the template. Intended only for migration/debugging.",
+    )
+    render_numbers.set_defaults(func=_cmd_render_numbers)
 
     return parser
 
