@@ -6,6 +6,7 @@ from .intake import IntakeBuildResult, build_intake_profile, write_intake_profil
 from .linting import LintReport, run_lint
 from .numeric_renderer import NumericRenderingResult, render_numeric_template, write_numeric_rendering
 from .run_validation import RunValidationReport, validate_run_dir, write_run_validation
+from .section_writer import SectionWriterResult, generate_sections, write_sections
 from .table_generator import TableGenerationResult, generate_publication_table, write_publication_table
 
 __all__ = [
@@ -15,11 +16,13 @@ __all__ = [
     "LintReport",
     "NumericRenderingResult",
     "RunValidationReport",
+    "SectionWriterResult",
     "TableGenerationResult",
     "build_claim_ledger",
     "build_evidence_ledger",
     "build_intake_profile",
     "generate_publication_table",
+    "generate_sections",
     "render_numeric_template",
     "run_lint",
     "validate_run_dir",
@@ -29,4 +32,5 @@ __all__ = [
     "write_numeric_rendering",
     "write_publication_table",
     "write_run_validation",
+    "write_sections",
 ]

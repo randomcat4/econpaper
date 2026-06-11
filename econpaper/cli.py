@@ -10,6 +10,7 @@ from .intake import write_intake_profile
 from .linting import run_lint
 from .numeric_renderer import write_numeric_rendering
 from .run_validation import write_run_validation
+from .section_writer import write_sections
 from .table_generator import write_publication_table
 
 
@@ -95,6 +96,18 @@ def _cmd_claims(args: argparse.Namespace) -> int:
         design_profile_path=args.design_profile,
         run_validation_path=args.run_validation,
         author_overrides_path=args.author_overrides,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_sections(args: argparse.Namespace) -> int:
+    result = write_sections(
+        claim_ledger_path=args.claim_ledger,
+        intake_profile_path=args.intake_profile,
+        citation_index_path=args.citation_index,
+        table_path=args.table_path,
+        out_dir=args.out,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -195,6 +208,17 @@ def build_parser() -> argparse.ArgumentParser:
     claims.add_argument("--run-validation", type=Path)
     claims.add_argument("--author-overrides", type=Path)
     claims.set_defaults(func=_cmd_claims)
+
+    sections = sub.add_parser(
+        "sections",
+        help="Generate deterministic v3 manuscript section skeletons from intake and claim ledger inputs.",
+    )
+    sections.add_argument("--claim-ledger", required=True, type=Path)
+    sections.add_argument("--intake-profile", required=True, type=Path)
+    sections.add_argument("--citation-index", type=Path)
+    sections.add_argument("--table-path", type=Path)
+    sections.add_argument("--out", required=True, type=Path)
+    sections.set_defaults(func=_cmd_sections)
 
     return parser
 
