@@ -41,3 +41,20 @@ and a missing canonical `skills/` tree.
 - `notes/REVIEW_PROMPT_FOR_LAOGE.md` is a pre-existing unstaged user edit and is
   not part of this release gate.
 
+## Phase A1 result
+
+Command:
+
+```powershell
+$env:PYTHONUTF8='1'
+$env:PYTHONIOENCODING='utf-8'
+python -m pytest tests/test_dag_migration.py tests/test_narrative_section_shape_guards.py tests/test_plugin_config_template_sync.py tests/test_skills_bootstrap.py -q
+python -m pytest -m "not live_llm and not latex and not slow" -q
+```
+
+Result:
+
+- Targeted A1 tests: `99 passed`
+- Full fast suite: `809 passed, 6 skipped, 4 deselected`
+
+The Phase A1 baseline failures are cleared.

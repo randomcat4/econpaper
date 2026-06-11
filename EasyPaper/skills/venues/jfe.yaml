@@ -1,0 +1,42 @@
+# Journal of Financial Economics Venue Profile
+
+name: journal-of-financial-economics
+description: >
+  Venue profile for Journal of Financial Economics style finance manuscripts.
+  Captures anonymous submission, formatting, and required-section constraints
+  for finance paper generation.
+version: "1.0.0"
+tags:
+  - venue
+  - jfe
+  - finance
+type: venue_profile
+target_sections:
+  - "*"
+priority: 15
+
+system_prompt_append: |
+  ## Journal of Financial Economics Guidelines
+  - Use a finance manuscript structure with Introduction, Data, Empirical Strategy, Results, Robustness, and Conclusion.
+  - Keep the abstract within 100 words.
+  - Preserve anonymous, double-spaced submission metadata for manuscript assembly.
+  - Avoid AI/ML benchmark-style sections unless the manuscript explicitly requires them.
+
+venue_config:
+  name: journal-of-financial-economics
+  field: finance
+  abstract_limit: 100
+  page_limit: null
+  anonymous: true
+  double_spacing: true
+  min_font_pt: 12
+  min_margin_in: 1.0
+  online_appendix_in_main_file: true
+  data_code_policy_required_after_acceptance: true
+  required_sections:
+    - "Introduction"
+    - "Data"
+    - "Empirical Strategy"
+    - "Results"
+    - "Robustness"
+    - "Conclusion"

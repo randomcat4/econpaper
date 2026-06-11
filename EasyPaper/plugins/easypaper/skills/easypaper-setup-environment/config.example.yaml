@@ -1,0 +1,132 @@
+agents:
+  - name: metadata
+    model:
+      model_name: gpt-4o-mini
+      api_key: ccproxy-oauth
+      base_url: http://127.0.0.1:8000/v1
+    max_tokens: 4000
+    timeout: 60
+    log_level: INFO
+    metadata_config:
+      enable_mini_review: true
+      max_review_iterations: 2
+    tools_config:
+      enabled: true
+      available_tools:
+        - validate_citations
+        - count_words
+        - check_key_points
+        - search_papers
+      max_react_iterations: 3
+      planner_plan_review_enabled: true
+      writer_structure_contract_enabled: true
+      review_structure_gate_enabled: true
+      paper_search:
+        timeout: 10
+        search_results_per_round: 5
+      research_context:
+        enabled: true
+        detailed: true
+      core_ref_analysis:
+        enabled: true
+      docling:
+        enabled: false
+      exemplar:
+        enabled: false
+  - name: planner
+    model:
+      model_name: gpt-4o-mini
+      api_key: ccproxy-oauth
+      base_url: http://127.0.0.1:8000/v1
+    max_tokens: 4000
+    timeout: 60
+    log_level: INFO
+  - name: writer
+    model:
+      model_name: gpt-4o-mini
+      api_key: ccproxy-oauth
+      base_url: http://127.0.0.1:8000/v1
+    max_tokens: 4000
+    timeout: 60
+    log_level: INFO
+    writer_config:
+      max_review_iterations: 2
+      enable_review: true
+      enable_tools: true
+  - name: reviewer
+    model:
+      model_name: gpt-4o-mini
+      api_key: ccproxy-oauth
+      base_url: http://127.0.0.1:8000/v1
+    max_tokens: 3000
+    timeout: 60
+    log_level: INFO
+  - name: typesetter
+    model:
+      model_name: gpt-4o-mini
+      api_key: ccproxy-oauth
+      base_url: http://127.0.0.1:8000/v1
+    max_tokens: 2000
+    timeout: 60
+    log_level: INFO
+  - name: vlm_review
+    model:
+      model_name: gpt-4o-mini
+      api_key: ccproxy-oauth
+      base_url: http://127.0.0.1:8000/v1
+    max_tokens: 2000
+    timeout: 60
+    log_level: INFO
+    vlm_review_config:
+      enabled: true
+      provider: openai
+      vlm_model: gpt-4o-mini
+      vlm_api_key: ccproxy-oauth
+      vlm_base_url: http://127.0.0.1:8000/v1
+      render_dpi: 150
+      max_pages_to_analyze: 12
+      check_overflow: true
+      check_underfill: true
+      check_layout: false
+skills:
+  enabled: true
+  skills_dir: ./skills
+  active_skills:
+    - "*"
+  venue_profile: aer
+tools:
+  enabled: true
+  available_tools:
+    - validate_citations
+    - count_words
+    - check_key_points
+    - search_papers
+  max_react_iterations: 3
+  planner_structure_signals_enabled: true
+  planner_plan_review_enabled: true
+  planner_plan_review_max_iterations: 2
+  table_critic_enabled: false
+  table_rendered_review_enabled: false
+  writer_structure_contract_enabled: true
+  review_structure_gate_enabled: true
+  paper_search:
+    timeout: 10
+    search_results_per_round: 5
+    planner_max_queries_per_section: 5
+    semantic_scholar_min_results_before_fallback: 3
+  research_context:
+    enabled: true
+    detailed: true
+    top_k_key_papers: 10
+  core_ref_analysis:
+    enabled: true
+  docling:
+    enabled: false
+  exemplar:
+    enabled: false
+vlm_service:
+  enabled: true
+  provider: openai
+  model: gpt-4o-mini
+  api_key: ccproxy-oauth
+  base_url: http://127.0.0.1:8000/v1
