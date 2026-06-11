@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .claim_ledger import write_claim_ledger
 from .evidence import write_evidence_ledger
 from .intake import write_intake_profile
 from .linting import run_lint
@@ -80,6 +81,20 @@ def _cmd_tables(args: argparse.Namespace) -> int:
         label=args.label,
         star_policy=args.star_policy,
         table_name=args.table_name,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_claims(args: argparse.Namespace) -> int:
+    result = write_claim_ledger(
+        evidence_ledger_path=args.evidence_ledger,
+        out_dir=args.out,
+        intake_profile_path=args.intake_profile,
+        citation_safety_report_path=args.citation_safety_report,
+        design_profile_path=args.design_profile,
+        run_validation_path=args.run_validation,
+        author_overrides_path=args.author_overrides,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -167,6 +182,19 @@ def build_parser() -> argparse.ArgumentParser:
     tables.add_argument("--star-policy", default="conventional", choices=["conventional", "none"])
     tables.add_argument("--table-name", default="table_main")
     tables.set_defaults(func=_cmd_tables)
+
+    claims = sub.add_parser(
+        "claims",
+        help="Build a v3 claim_ledger.json with gates, placeholders, and author overrides.",
+    )
+    claims.add_argument("--evidence-ledger", required=True, type=Path)
+    claims.add_argument("--out", required=True, type=Path)
+    claims.add_argument("--intake-profile", type=Path)
+    claims.add_argument("--citation-safety-report", type=Path)
+    claims.add_argument("--design-profile", type=Path)
+    claims.add_argument("--run-validation", type=Path)
+    claims.add_argument("--author-overrides", type=Path)
+    claims.set_defaults(func=_cmd_claims)
 
     return parser
 
