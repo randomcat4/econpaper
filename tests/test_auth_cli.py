@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from econpaper.auth import auth_status, login_provider, verify_provider
+from econpaper.auth import auth_status, subscription_status, login_provider, verify_provider, verify_subscription
 
 
 def test_login_env_requires_present_variable(tmp_path: Path, monkeypatch) -> None:
@@ -110,3 +110,52 @@ def test_auth_cli_status_is_redacted(tmp_path: Path) -> None:
     assert proc_status.returncode == 0, proc_status.stdout + proc_status.stderr
     assert "sk-ant-test-secret" not in proc_status.stdout
     assert '"configured": true' in proc_status.stdout
+
+
+def test_verify_codex_subscription_uses_chatgpt_login_without_api_key() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(args: tuple[str, ...], timeout: float) -> subprocess.CompletedProcess[str]:
+        captured.update({"args": args, "timeout": timeout})
+        return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="Logged in using ChatGPT\n", stderr="")
+
+    result = verify_subscription("chatgpt", command_runner=fake_run)
+    assert result.has_hard_blocks is False
+    assert result.subscriptions["codex"]["configured"] is True
+    assert result.subscriptions["codex"]["auth_method"] == "chatgpt"
+    assert result.verification["live_model_request_attempted"] is False
+    assert captured["args"] == ("codex", "-c", 'service_tier="flex"', "login", "status")
+
+
+def test_verify_claude_code_subscription_redacts_account_identity() -> None:
+    raw_status = {
+        "loggedIn": True,
+        "authMethod": "claude.ai",
+        "apiProvider": "firstParty",
+        "email": "person@example.com",
+        "orgId": "org-secret",
+        "orgName": "Private Org",
+        "subscriptionType": "pro",
+    }
+
+    def fake_run(args: tuple[str, ...], timeout: float) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=list(args), returncode=0, stdout=json.dumps(raw_status), stderr="")
+
+    result = verify_subscription("claude-code", command_runner=fake_run)
+    payload = json.dumps(result.to_dict())
+    assert result.has_hard_blocks is False
+    assert result.subscriptions["claude-code"]["configured"] is True
+    assert result.subscriptions["claude-code"]["subscription_type"] == "pro"
+    assert result.subscriptions["claude-code"]["email_present"] is True
+    assert "person@example.com" not in payload
+    assert "org-secret" not in payload
+    assert "Private Org" not in payload
+
+
+def test_subscription_status_hard_fails_when_no_subscription_cli_is_logged_in() -> None:
+    def fake_run(args: tuple[str, ...], timeout: float) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=list(args), returncode=1, stdout="", stderr="not logged in")
+
+    result = subscription_status(command_runner=fake_run)
+    assert result.has_hard_blocks is True
+    assert "subscription_auth_missing" in {issue.code for issue in result.issues}

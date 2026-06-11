@@ -17,7 +17,7 @@ product/auth smoke checkpoint commit: 152ebe6 feat: harden v3 write smoke and au
 - Builds intake profiles, evidence ledgers, claim ledgers, design profiles, publication tables, manuscript sections, coherence reports, compile fallbacks, release-gate reports, and quality-suite manifests.
 - Renders numeric placeholders from the evidence ledger before coherence and compile, so generated `main.md` and Results sections should not retain unresolved `{{...}}` numeric slots.
 - Consolidates scholar-facing output into `AUTHOR_REPORT.md`; machine-readable JSON lives under `reports/internal/`.
-- Provides OpenAI and Claude auth commands for redacted login/status and live verification.
+- Provides separate API-key auth and subscription-CLI auth commands for redacted login/status and verification.
 - Accepts Windows PowerShell UTF-8 BOM JSON inputs.
 - Imports common external regression tables from Stata logs, R coefficient summaries, Python/statsmodels summaries, CSV/TSV tables, and LaTeX publication tables into structured `model_table.csv` with an audit report.
 
@@ -29,7 +29,7 @@ product/auth smoke checkpoint commit: 152ebe6 feat: harden v3 write smoke and au
 - It does not replace the author on institutional background, contribution judgment, field positioning, mechanism interpretation, or external-validity argumentation.
 - The release-gate machinery exists, but a real release still needs five real economics/finance scholar evaluations with attached feedback.
 - `main.pdf` depends on local LaTeX availability. If LaTeX is missing or fails, v3 should produce `main.md`, `main.tex`, and a human-readable compile memo instead.
-- OpenAI/Claude live auth verification requires real credentials; missing or invalid credentials are hard failures, not degraded success.
+- OpenAI/Claude API live auth verification requires real API credentials; subscription CLI verification requires real local Codex/Claude Code login. Missing or invalid credentials are hard failures, not degraded success.
 
 ## Repository Layout
 
@@ -52,7 +52,7 @@ python -m pytest -q
 Expected at the latest checkpoint:
 
 ```text
-114 passed
+117 passed
 ```
 
 ## Core CLI
@@ -92,7 +92,9 @@ python -m econpaper.cli quality-suite --out quality_suite_pack
 
 ## Auth Commands
 
-`econpaper auth` supports OpenAI and Claude/Anthropic API verification without printing secrets.
+`econpaper auth` separates API-key verification from subscription-backed CLI login checks. It never prints API keys, Codex tokens, Claude Code credentials, emails, or org IDs.
+
+### API Key Verification
 
 ```powershell
 python -m econpaper.cli auth login openai --api-key-env OPENAI_API_KEY
@@ -109,6 +111,29 @@ Behavior:
 - Missing credentials fail with `credential_missing`.
 - Provider/network/auth errors fail; there is no fallback success.
 - `auth status` is redacted.
+
+### Subscription CLI Verification
+
+Use this path when running through local Codex/ChatGPT or Claude Code subscriptions instead of direct API keys.
+
+```powershell
+python -m econpaper.cli auth subscription-status
+python -m econpaper.cli auth verify-subscription codex
+python -m econpaper.cli auth verify-subscription claude-code
+```
+
+Behavior:
+
+- Codex verification shells out to `codex -c service_tier="flex" login status` and passes only when the CLI reports `Logged in using ChatGPT`.
+- Claude Code verification shells out to `claude auth status` and passes only when it reports `loggedIn=true`, `authMethod=claude.ai`, and `apiProvider=firstParty`.
+- The checks do not read token files directly and do not make a model request.
+- Missing CLI tools or logged-out subscription sessions hard-fail with `subscription_auth_missing`; there is no API-key or local-model fallback.
+- To sign in manually, use `codex login --device-auth` or `claude auth login`.
+
+Reference implementations:
+
+- [openai/codex](https://github.com/openai/codex)
+- [anthropics/claude-code](https://github.com/anthropics/claude-code)
 
 ## Product Smoke Expectations
 
@@ -135,7 +160,7 @@ Highest-impact known gaps:
 - Improve field-specific writing depth for finance, accounting, management, and applied micro subfields beyond conservative ledger-driven sections.
 - Expand design gates beyond current deterministic coverage, especially for staggered DID, IV, RDD, finance event studies, factor alphas, multiple testing, and mechanism claims.
 - Add richer human-edit preservation workflows and reviewer-facing diffs across reruns.
-- Exercise live OpenAI and Claude verification with real credentials in the deployment environment.
+- Exercise live OpenAI/Claude API verification and subscription CLI verification with real credentials in the deployment environment.
 - Exercise real LaTeX toolchains across Windows and non-Windows machines.
 
 ## Design Boundary

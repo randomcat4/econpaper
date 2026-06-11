@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -28,6 +30,16 @@ class ProviderSpec:
     docs_url: str
 
 
+@dataclass(frozen=True)
+class SubscriptionProviderSpec:
+    name: str
+    display_name: str
+    cli_name: str
+    status_command: tuple[str, ...]
+    login_command: str
+    docs_url: str
+
+
 PROVIDERS: dict[str, ProviderSpec] = {
     "openai": ProviderSpec(
         name="openai",
@@ -49,6 +61,36 @@ ALIASES = {
     "anthropic": "claude",
 }
 
+SUBSCRIPTION_PROVIDERS: dict[str, SubscriptionProviderSpec] = {
+    "codex": SubscriptionProviderSpec(
+        name="codex",
+        display_name="OpenAI Codex / ChatGPT subscription",
+        cli_name="codex",
+        # Override service_tier because older local configs may still contain
+        # service_tier="default", while current Codex accepts only fast/flex.
+        status_command=("codex", "-c", 'service_tier="flex"', "login", "status"),
+        login_command="codex login --device-auth",
+        docs_url="https://github.com/openai/codex",
+    ),
+    "claude-code": SubscriptionProviderSpec(
+        name="claude-code",
+        display_name="Claude Code subscription",
+        cli_name="claude",
+        status_command=("claude", "auth", "status"),
+        login_command="claude auth login",
+        docs_url="https://github.com/anthropics/claude-code",
+    ),
+}
+
+SUBSCRIPTION_ALIASES = {
+    "chatgpt": "codex",
+    "openai-codex": "codex",
+    "codex-cli": "codex",
+    "claude_code": "claude-code",
+    "claude-code-cli": "claude-code",
+    "claude-subscription": "claude-code",
+}
+
 
 @dataclass
 class AuthIssue:
@@ -67,6 +109,7 @@ class AuthResult:
     action: str | None = None
     auth_file: str | None = None
     providers: dict[str, Any] = field(default_factory=dict)
+    subscriptions: dict[str, Any] = field(default_factory=dict)
     verification: dict[str, Any] = field(default_factory=dict)
     issues: list[AuthIssue] = field(default_factory=list)
 
@@ -87,12 +130,14 @@ class AuthResult:
             "action": self.action,
             "auth_file": self.auth_file,
             "providers": self.providers,
+            "subscriptions": self.subscriptions,
             "verification": self.verification,
             "issues": [issue.to_dict() for issue in self.issues],
         }
 
 
 HttpGetJson = Callable[[str, dict[str, str], float], dict[str, Any]]
+CommandRunner = Callable[[tuple[str, ...], float], subprocess.CompletedProcess[str]]
 
 
 def canonical_provider(provider: str) -> str:
@@ -101,6 +146,15 @@ def canonical_provider(provider: str) -> str:
     if key not in PROVIDERS:
         allowed = ", ".join(sorted(PROVIDERS))
         raise AuthError(f"Unknown auth provider `{provider}`. Supported providers: {allowed}.")
+    return key
+
+
+def canonical_subscription_provider(provider: str) -> str:
+    key = provider.strip().lower()
+    key = SUBSCRIPTION_ALIASES.get(key, key)
+    if key not in SUBSCRIPTION_PROVIDERS:
+        allowed = ", ".join(sorted(SUBSCRIPTION_PROVIDERS))
+        raise AuthError(f"Unknown subscription provider `{provider}`. Supported providers: {allowed}.")
     return key
 
 
@@ -175,6 +229,55 @@ def auth_status(*, auth_file: str | Path | None = None) -> AuthResult:
     result = AuthResult(status="passed", action="status", auth_file=str(path))
     config = _load_config(path, result)
     result.providers = {name: _status_for_provider(spec, config) for name, spec in PROVIDERS.items()}
+    return result
+
+
+def subscription_status(
+    *,
+    timeout: float = 15.0,
+    command_runner: CommandRunner | None = None,
+) -> AuthResult:
+    result = AuthResult(status="passed", action="subscription-status")
+    for name, spec in SUBSCRIPTION_PROVIDERS.items():
+        result.subscriptions[name] = _subscription_status_for_provider(
+            spec,
+            timeout=timeout,
+            command_runner=command_runner,
+        )
+    if any(item.get("configured") for item in result.subscriptions.values()):
+        return result
+    result.add_issue(
+        "subscription_auth_missing",
+        "hard_block",
+        "No usable Codex/ChatGPT or Claude Code subscription login was detected.",
+    )
+    return result
+
+
+def verify_subscription(
+    provider: str,
+    *,
+    timeout: float = 15.0,
+    command_runner: CommandRunner | None = None,
+) -> AuthResult:
+    provider_name = canonical_subscription_provider(provider)
+    spec = SUBSCRIPTION_PROVIDERS[provider_name]
+    result = AuthResult(status="passed", provider=provider_name, action="verify-subscription")
+    status = _subscription_status_for_provider(spec, timeout=timeout, command_runner=command_runner)
+    result.subscriptions[provider_name] = status
+    result.verification = {
+        "provider": provider_name,
+        "subscription_status_attempted": True,
+        "live_model_request_attempted": False,
+        "docs_url": spec.docs_url,
+        "login_command": spec.login_command,
+    }
+    if not status.get("configured"):
+        result.add_issue(
+            "subscription_auth_missing",
+            "hard_block",
+            f"No usable {spec.display_name} login was detected. Run `{spec.login_command}` and retry.",
+        )
     return result
 
 
@@ -318,6 +421,114 @@ def _verify_headers(spec: ProviderSpec, api_key: str) -> dict[str, str]:
             "anthropic-version": ANTHROPIC_VERSION,
         }
     raise AuthError(f"Unsupported provider `{spec.name}`.")
+
+
+def _subscription_status_for_provider(
+    spec: SubscriptionProviderSpec,
+    *,
+    timeout: float,
+    command_runner: CommandRunner | None,
+) -> dict[str, Any]:
+    cli_path = shutil.which(spec.cli_name)
+    detail: dict[str, Any] = {
+        "display_name": spec.display_name,
+        "configured": False,
+        "source": "subscription_cli",
+        "cli": spec.cli_name,
+        "cli_path": cli_path,
+        "docs_url": spec.docs_url,
+        "login_command": spec.login_command,
+    }
+    if not cli_path:
+        detail.update({"status": "missing_cli", "message": f"`{spec.cli_name}` was not found on PATH."})
+        return detail
+    runner = command_runner or _run_command
+    try:
+        proc = runner(spec.status_command, timeout)
+    except subprocess.TimeoutExpired:
+        detail.update({"status": "status_timeout", "message": f"`{spec.cli_name}` status command timed out."})
+        return detail
+    except Exception as exc:
+        detail.update({"status": "status_error", "message": str(exc)})
+        return detail
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+    combined = "\n".join(part for part in [stdout, stderr] if part).strip()
+    detail["returncode"] = proc.returncode
+    if spec.name == "codex":
+        configured = proc.returncode == 0 and "logged in using chatgpt" in combined.lower()
+        detail.update(
+            {
+                "configured": configured,
+                "auth_method": "chatgpt" if configured else None,
+                "plan_type": "unknown",
+                "status": "passed" if configured else "failed",
+                "message": _safe_status_message(combined),
+            }
+        )
+        return detail
+    if spec.name == "claude-code":
+        parsed = _parse_json_object(stdout)
+        configured = (
+            proc.returncode == 0
+            and bool(parsed.get("loggedIn"))
+            and str(parsed.get("authMethod") or "").lower() == "claude.ai"
+            and str(parsed.get("apiProvider") or "").lower() == "firstparty"
+        )
+        detail.update(
+            {
+                "configured": configured,
+                "auth_method": parsed.get("authMethod") if parsed else None,
+                "api_provider": parsed.get("apiProvider") if parsed else None,
+                "subscription_type": parsed.get("subscriptionType") if parsed else None,
+                "email_present": bool(parsed.get("email")) if parsed else False,
+                "org_present": bool(parsed.get("orgId") or parsed.get("orgName")) if parsed else False,
+                "status": "passed" if configured else "failed",
+                "message": "logged in with Claude Code subscription" if configured else _safe_status_message(stderr or stdout),
+            }
+        )
+        return detail
+    detail.update({"status": "unsupported", "message": "Unsupported subscription provider."})
+    return detail
+
+
+def _run_command(args: tuple[str, ...], timeout: float) -> subprocess.CompletedProcess[str]:
+    if os.name == "nt":
+        return subprocess.run(
+            subprocess.list2cmdline(list(args)),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            shell=True,
+        )
+    return subprocess.run(
+        list(args),
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _parse_json_object(text: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _safe_status_message(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = text.replace("\r", " ").replace("\n", " ")
+    # Keep diagnostics useful without leaking long terminal output.
+    return cleaned[:500]
 
 
 def _http_get_json(url: str, headers: dict[str, str], timeout: float) -> dict[str, Any]:

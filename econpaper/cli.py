@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .auth import auth_status, login_provider, verify_provider
+from .auth import auth_status, login_provider, subscription_status, verify_provider, verify_subscription
 from .claim_ledger import write_claim_ledger
 from .coherence import write_global_coherence
 from .compile_pack import compile_pack
@@ -237,6 +237,18 @@ def _cmd_auth_verify(args: argparse.Namespace) -> int:
     return 1 if result.has_hard_blocks else 0
 
 
+def _cmd_auth_subscription_status(args: argparse.Namespace) -> int:
+    result = subscription_status(timeout=args.timeout)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_auth_verify_subscription(args: argparse.Namespace) -> int:
+    result = verify_subscription(args.provider, timeout=args.timeout)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="econpaper")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -434,7 +446,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     auth = sub.add_parser(
         "auth",
-        help="Manage OpenAI and Claude API authentication for live verification.",
+        help="Manage API-key and subscription CLI authentication for live verification.",
     )
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)
 
@@ -463,6 +475,24 @@ def build_parser() -> argparse.ArgumentParser:
     auth_verify.add_argument("--auth-file", type=Path, help="Override the auth file path.")
     auth_verify.add_argument("--timeout", type=float, default=30.0)
     auth_verify.set_defaults(func=_cmd_auth_verify)
+
+    auth_subscription_status = auth_sub.add_parser(
+        "subscription-status",
+        help="Show redacted Codex/ChatGPT and Claude Code subscription login status.",
+    )
+    auth_subscription_status.add_argument("--timeout", type=float, default=15.0)
+    auth_subscription_status.set_defaults(func=_cmd_auth_subscription_status)
+
+    auth_verify_subscription = auth_sub.add_parser(
+        "verify-subscription",
+        help="Verify a subscription-backed CLI login without using API keys or local fallbacks.",
+    )
+    auth_verify_subscription.add_argument(
+        "provider",
+        choices=["codex", "chatgpt", "openai-codex", "claude-code", "claude_code", "claude-subscription"],
+    )
+    auth_verify_subscription.add_argument("--timeout", type=float, default=15.0)
+    auth_verify_subscription.set_defaults(func=_cmd_auth_verify_subscription)
 
     return parser
 
