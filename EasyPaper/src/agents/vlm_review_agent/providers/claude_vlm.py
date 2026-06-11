@@ -28,7 +28,7 @@ class ClaudeVLM(VLMProvider):
         self,
         api_key: str,
         model: str = "claude-3-5-sonnet-20241022",
-        max_tokens: Optional[int] = None,
+        max_tokens: Optional[int] = 1024,
         temperature: float = 0.1,
         **kwargs
     ):
@@ -46,6 +46,8 @@ class ClaudeVLM(VLMProvider):
 
         self.max_tokens = max_tokens
         self.temperature = temperature
+        if not api_key:
+            raise ValueError("Claude VLM provider requires an Anthropic API key.")
         
         # Lazy import anthropic
         try:
@@ -83,6 +85,8 @@ class ClaudeVLM(VLMProvider):
             # Build message with image
             message_kwargs: Dict[str, Any] = {
                 "model": self.model,
+                "max_tokens": self.max_tokens or 1024,
+                "temperature": self.temperature,
                 "messages": [
                     {
                         "role": "user",
@@ -103,14 +107,12 @@ class ClaudeVLM(VLMProvider):
                     }
                 ],
             }
-            if self.max_tokens is not None:
-                message_kwargs["max_tokens"] = self.max_tokens
-
             message = await self.client.messages.create(**message_kwargs)
             
             # Extract response
-            content = message.content[0].text if message.content else ""
-            tokens_used = message.usage.input_tokens + message.usage.output_tokens
+            content = self._message_text(message)
+            usage = getattr(message, "usage", None)
+            tokens_used = (getattr(usage, "input_tokens", 0) or 0) + (getattr(usage, "output_tokens", 0) or 0)
             
             # Try to parse JSON
             parsed_content = self._try_parse_json(content)
@@ -153,6 +155,16 @@ class ClaudeVLM(VLMProvider):
                     pass
         
         return None
+
+    @staticmethod
+    def _message_text(message: Any) -> str:
+        """Collect text blocks from an Anthropic message response."""
+        parts: list[str] = []
+        for block in getattr(message, "content", []) or []:
+            text = getattr(block, "text", None)
+            if isinstance(text, str):
+                parts.append(text)
+        return "\n".join(parts)
 
 
 # Register with factory

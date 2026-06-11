@@ -77,6 +77,21 @@ Expected:
 - `release-gate` passes only when the human-evaluation fixture satisfies the v3 thresholds.
 - `quality-suite` reports the false-confidence and Q-series manifest.
 
+Also test external table importing:
+
+```powershell
+python -m econpaper.cli import-table --input <stata_or_r_or_python_or_latex_table> --format auto --out <import_dir>
+python -m econpaper.cli evidence --run-dir <run_dir> --model-table <import_dir>\model_table.csv --out <evidence_dir>
+```
+
+Expected:
+
+- common Stata/R/Python/statsmodels/CSV/LaTeX coefficient tables produce `model_table.csv`;
+- random prose numbers do not become evidence;
+- LaTeX significance stars do not become exact p-values;
+- coefficient-only rows without inference are marked non-claimable;
+- duplicate term/model pairs hard-block as ambiguous.
+
 ## Negative Tests
 
 Try to break the system. At minimum:
@@ -119,7 +134,7 @@ If real credentials are unavailable, say that live verification could not be com
 Do not mark these as accidental regressions unless the code claims otherwise:
 
 - P0 does not implement literature search, citation graph discovery, PDF crawling, or literature RAG.
-- P0 supports native structured `skill4econ` outputs; arbitrary pasted Stata/R/Python/LaTeX tables require a future importer.
+- P0 now has a common-format external table importer for Stata/R/Python/statsmodels/CSV/LaTeX tables, but arbitrary nonstandard or ambiguous tables must still fail closed or require parser expansion.
 - The release-gate machinery exists, but a real five-scholar evaluation campaign is still external evidence that must be supplied.
 - `main.pdf` depends on local LaTeX availability; markdown fallback is expected when LaTeX is missing.
 - Auth commands exist, but live OpenAI/Claude verification requires real keys.

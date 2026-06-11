@@ -50,6 +50,10 @@ class OpenAIVLM(VLMProvider):
 
         self.max_tokens = max_tokens
         self.temperature = temperature
+        if not api_key and base_url:
+            api_key = "EMPTY"
+        if not api_key:
+            raise ValueError("OpenAI VLM provider requires an API key unless base_url points to an OpenAI-compatible local endpoint.")
         
         # Initialize client
         client_kwargs = {"api_key": api_key}

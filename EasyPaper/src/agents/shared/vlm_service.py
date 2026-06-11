@@ -150,9 +150,16 @@ class VLMService:
             kwargs: Dict[str, Any] = {}
             if self._base_url:
                 kwargs["base_url"] = self._base_url
+            api_key = self._api_key or ""
+            if not api_key and self._base_url and self._provider_name.lower() == "openai":
+                # OpenAI-compatible local servers such as vLLM commonly accept
+                # any non-empty API key while still requiring the client field.
+                api_key = "EMPTY"
+            if not api_key and self._provider_name.lower() != "qwen":
+                raise ValueError(f"API key required for VLM provider: {self._provider_name}")
             self._provider = VLMFactory.create(
                 provider=self._provider_name,
-                api_key=self._api_key or "",
+                api_key=api_key,
                 model=self._model or "gpt-4o",
                 **kwargs,
             )

@@ -10,6 +10,7 @@ from .coherence import write_global_coherence
 from .compile_pack import compile_pack
 from .design_profiler import write_design_profile
 from .evidence import write_evidence_ledger
+from .external_table_importer import write_external_table_import
 from .incremental_rerun import write_incremental_rerun
 from .intake import write_intake_profile
 from .linting import run_lint
@@ -64,6 +65,18 @@ def _cmd_evidence(args: argparse.Namespace) -> int:
         intake_profile_path=args.intake_profile,
         model_table_paths=args.model_table,
         summary_stats_path=args.summary_stats,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_import_table(args: argparse.Namespace) -> int:
+    result = write_external_table_import(
+        args.input,
+        out_dir=args.out,
+        source_format=args.format,
+        model_id=args.model_id,
+        include_intercept=args.include_intercept,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -189,6 +202,7 @@ def _cmd_write(args: argparse.Namespace) -> int:
         venue=args.venue,
         out_dir=args.out,
         latex_command=args.latex_command,
+        model_table_paths=args.model_table,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -276,6 +290,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evidence.add_argument("--summary-stats", type=Path)
     evidence.set_defaults(func=_cmd_evidence)
+
+    import_table = sub.add_parser(
+        "import-table",
+        help="Import common Stata, R, Python/statsmodels, CSV, or LaTeX regression tables into structured model_table.csv.",
+    )
+    import_table.add_argument("--input", required=True, type=Path)
+    import_table.add_argument("--out", required=True, type=Path)
+    import_table.add_argument("--format", default="auto", choices=["auto", "stata", "r", "python", "latex", "csv"])
+    import_table.add_argument("--model-id", help="Override the imported model id for single-model text outputs.")
+    import_table.add_argument("--include-intercept", action="store_true", help="Keep intercept/constant rows; skipped by default.")
+    import_table.set_defaults(func=_cmd_import_table)
 
     render_numbers = sub.add_parser(
         "render-numbers",
@@ -392,6 +417,12 @@ def build_parser() -> argparse.ArgumentParser:
     write.add_argument("--venue", default="generic-field-journal")
     write.add_argument("--out", required=True, type=Path)
     write.add_argument("--latex-command", default="pdflatex")
+    write.add_argument(
+        "--model-table",
+        action="append",
+        type=Path,
+        help="Structured model_table.csv/json, including output from `econpaper import-table`. May be passed multiple times.",
+    )
     write.set_defaults(func=_cmd_write)
 
     quality_suite = sub.add_parser(

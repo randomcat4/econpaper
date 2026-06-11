@@ -65,6 +65,7 @@ def write_manuscript_pack(
     out_dir: str | Path,
     venue: str | None = None,
     latex_command: str = "pdflatex",
+    model_table_paths: list[str | Path] | None = None,
 ) -> WritePackResult:
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -87,7 +88,12 @@ def write_manuscript_pack(
 
     run_validation = write_run_validation(run_dir, out_path)
     result.manifest["steps"].append({"name": "validate_run", "status": run_validation.status})
-    evidence = write_evidence_ledger(run_dir=run_dir, out_dir=out_path, intake_profile_path=out_path / "intake_profile.json")
+    evidence = write_evidence_ledger(
+        run_dir=run_dir,
+        out_dir=out_path,
+        intake_profile_path=out_path / "intake_profile.json",
+        model_table_paths=model_table_paths,
+    )
     result.manifest["steps"].append({"name": "evidence", "status": evidence.status})
     design = write_design_profile(
         intake_profile_path=out_path / "intake_profile.json",

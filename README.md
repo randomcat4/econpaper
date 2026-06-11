@@ -19,12 +19,13 @@ product/auth smoke checkpoint commit: 152ebe6 feat: harden v3 write smoke and au
 - Consolidates scholar-facing output into `AUTHOR_REPORT.md`; machine-readable JSON lives under `reports/internal/`.
 - Provides OpenAI and Claude auth commands for redacted login/status and live verification.
 - Accepts Windows PowerShell UTF-8 BOM JSON inputs.
+- Imports common external regression tables from Stata logs, R coefficient summaries, Python/statsmodels summaries, CSV/TSV tables, and LaTeX publication tables into structured `model_table.csv` with an audit report.
 
 ## What v3 Does Not Claim Yet
 
 - It is not a one-click publishable paper generator. The intended endpoint is a roughly 70% draft package plus a precise author task list.
 - It does not run literature search, citation-graph discovery, PDF crawling, or literature RAG in P0.
-- It does not parse arbitrary pasted Stata/R/Python/LaTeX regression tables into claimable evidence; that remains a P1+ importer track.
+- It does not guarantee perfect parsing of every arbitrary pasted regression table. The importer supports common Stata/R/Python/LaTeX layouts and fails closed on ambiguous or unsupported structures.
 - It does not replace the author on institutional background, contribution judgment, field positioning, mechanism interpretation, or external-validity argumentation.
 - The release-gate machinery exists, but a real release still needs five real economics/finance scholar evaluations with attached feedback.
 - `main.pdf` depends on local LaTeX availability. If LaTeX is missing or fails, v3 should produce `main.md`, `main.tex`, and a human-readable compile memo instead.
@@ -51,7 +52,7 @@ python -m pytest -q
 Expected at the latest checkpoint:
 
 ```text
-101 passed
+114 passed
 ```
 
 ## Core CLI
@@ -68,10 +69,16 @@ python -m econpaper.cli intake `
   --answers answers.json `
   --out intake_pack
 
+python -m econpaper.cli import-table `
+  --input raw_stata_or_latex_table.txt `
+  --format auto `
+  --out imported_table
+
 python -m econpaper.cli write `
   --run-dir path\to\skill4econ_run `
   --intake intake_profile.json `
   --refs refs.bib `
+  --model-table imported_table\model_table.csv `
   --venue aea `
   --out manuscript_pack
 
@@ -110,6 +117,7 @@ A valid generation smoke should:
 - exit 0 from `write`;
 - create `AUTHOR_REPORT.md`, `main.md`, `main.tex`, `sections/`, `tables/`, `bibliography/refs.bib`, and `reports/internal/`;
 - write `reports/internal/numeric_rendering_sections.json`;
+- accept an imported external `model_table.csv` through `--model-table` when native `skill4econ` tables are unavailable;
 - leave no unresolved `{{...}}` numeric placeholders in `sections/04_results.md` or `main.md`;
 - pass `release-gate` only with a human-evaluation file meeting v3 thresholds;
 - pass `quality-suite`;
@@ -122,7 +130,7 @@ See [`econpaper_roadmap_v3/OTHER_MODEL_TEST_PROMPT.md`](econpaper_roadmap_v3/OTH
 Highest-impact known gaps:
 
 - Run a real five-scholar economics/finance evaluation campaign and attach feedback to release notes.
-- Build P1+ importers for arbitrary external regression outputs and manually supplied tables.
+- Expand external table importing beyond common Stata/R/Python/statsmodels/CSV/LaTeX layouts, especially multi-panel tables, custom `esttab` notes, modelsummary variants, and nonstandard confidence-interval-only tables.
 - Add structured literature-note adapters for Zotero, Better BibTeX, OpenAlex, Crossref, Semantic Scholar, NBER, RePEc, or similar systems.
 - Improve field-specific writing depth for finance, accounting, management, and applied micro subfields beyond conservative ledger-driven sections.
 - Expand design gates beyond current deterministic coverage, especially for staggered DID, IV, RDD, finance event studies, factor alphas, multiple testing, and mechanism claims.
