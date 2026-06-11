@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .claim_ledger import write_claim_ledger
 from .coherence import write_global_coherence
+from .compile_pack import compile_pack
 from .design_profiler import write_design_profile
 from .evidence import write_evidence_ledger
 from .incremental_rerun import write_incremental_rerun
@@ -16,6 +17,8 @@ from .release_gate import write_release_gate
 from .run_validation import write_run_validation
 from .section_writer import write_sections
 from .table_generator import write_publication_table
+from .venue import resolve_venue
+from .write_pack import write_manuscript_pack
 
 
 def _cmd_validate_run(args: argparse.Namespace) -> int:
@@ -77,6 +80,9 @@ def _cmd_render_numbers(args: argparse.Namespace) -> int:
 
 
 def _cmd_tables(args: argparse.Namespace) -> int:
+    star_policy = args.star_policy
+    if star_policy is None:
+        star_policy = resolve_venue(args.venue).star_policy
     result = write_publication_table(
         evidence_ledger_path=args.evidence_ledger,
         out_dir=args.out,
@@ -84,7 +90,7 @@ def _cmd_tables(args: argparse.Namespace) -> int:
         model_metadata_path=args.model_metadata,
         caption=args.caption,
         label=args.label,
-        star_policy=args.star_policy,
+        star_policy=star_policy,
         table_name=args.table_name,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
@@ -156,6 +162,31 @@ def _cmd_design(args: argparse.Namespace) -> int:
         run_validation_path=args.run_validation,
         author_amendments_path=args.author_amendments,
         out_dir=args.out,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_compile(args: argparse.Namespace) -> int:
+    result = compile_pack(
+        args.pack_dir,
+        venue=args.venue,
+        out_dir=args.out,
+        latex_command=args.latex_command,
+        max_attempts=args.max_attempts,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_write(args: argparse.Namespace) -> int:
+    result = write_manuscript_pack(
+        run_dir=args.run_dir,
+        intake_profile_path=args.intake,
+        refs_path=args.refs,
+        venue=args.venue,
+        out_dir=args.out,
+        latex_command=args.latex_command,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -240,7 +271,8 @@ def build_parser() -> argparse.ArgumentParser:
     tables.add_argument("--model-metadata", type=Path)
     tables.add_argument("--caption", default="Main Results")
     tables.add_argument("--label", default="tab:main_results")
-    tables.add_argument("--star-policy", default="conventional", choices=["conventional", "none"])
+    tables.add_argument("--venue", default="generic-field-journal")
+    tables.add_argument("--star-policy", choices=["conventional", "none"])
     tables.add_argument("--table-name", default="table_main")
     tables.set_defaults(func=_cmd_tables)
 
@@ -307,6 +339,29 @@ def build_parser() -> argparse.ArgumentParser:
     design.add_argument("--author-amendments", type=Path)
     design.add_argument("--out", required=True, type=Path)
     design.set_defaults(func=_cmd_design)
+
+    compile_cmd = sub.add_parser(
+        "compile",
+        help="Assemble main.md/main.tex and run the v3 LaTeX compile loop with markdown fallback.",
+    )
+    compile_cmd.add_argument("pack_dir", type=Path)
+    compile_cmd.add_argument("--venue", default="generic-field-journal")
+    compile_cmd.add_argument("--out", type=Path)
+    compile_cmd.add_argument("--latex-command", default="pdflatex")
+    compile_cmd.add_argument("--max-attempts", type=int, default=2)
+    compile_cmd.set_defaults(func=_cmd_compile)
+
+    write = sub.add_parser(
+        "write",
+        help="Generate a v3 manuscript pack from a skill4econ run, intake profile, bibliography, and venue.",
+    )
+    write.add_argument("--run-dir", required=True, type=Path)
+    write.add_argument("--intake", required=True, type=Path)
+    write.add_argument("--refs", required=True, type=Path)
+    write.add_argument("--venue", default="generic-field-journal")
+    write.add_argument("--out", required=True, type=Path)
+    write.add_argument("--latex-command", default="pdflatex")
+    write.set_defaults(func=_cmd_write)
 
     return parser
 
