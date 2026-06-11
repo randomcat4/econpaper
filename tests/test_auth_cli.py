@@ -124,7 +124,7 @@ def test_verify_codex_subscription_uses_chatgpt_login_without_api_key() -> None:
     assert result.subscriptions["codex"]["configured"] is True
     assert result.subscriptions["codex"]["auth_method"] == "chatgpt"
     assert result.verification["live_model_request_attempted"] is False
-    assert captured["args"] == ("codex", "-c", 'service_tier="flex"', "login", "status")
+    assert captured["args"] == ("codex", "-c", 'service_tier="fast"', "login", "status")
 
 
 def test_verify_claude_code_subscription_redacts_account_identity() -> None:

@@ -67,8 +67,9 @@ SUBSCRIPTION_PROVIDERS: dict[str, SubscriptionProviderSpec] = {
         display_name="OpenAI Codex / ChatGPT subscription",
         cli_name="codex",
         # Override service_tier because older local configs may still contain
-        # service_tier="default", while current Codex accepts only fast/flex.
-        status_command=("codex", "-c", 'service_tier="flex"', "login", "status"),
+        # service_tier="default". Use fast because it also works for real
+        # subscription-backed Codex model calls.
+        status_command=("codex", "-c", 'service_tier="fast"', "login", "status"),
         login_command="codex login --device-auth",
         docs_url="https://github.com/openai/codex",
     ),

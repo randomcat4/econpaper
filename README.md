@@ -124,7 +124,7 @@ python -m econpaper.cli auth verify-subscription claude-code
 
 Behavior:
 
-- Codex verification shells out to `codex -c service_tier="flex" login status` and passes only when the CLI reports `Logged in using ChatGPT`.
+- Codex verification shells out to `codex -c service_tier="fast" login status` and passes only when the CLI reports `Logged in using ChatGPT`.
 - Claude Code verification shells out to `claude auth status` and passes only when it reports `loggedIn=true`, `authMethod=claude.ai`, and `apiProvider=firstParty`.
 - The checks do not read token files directly and do not make a model request.
 - Missing CLI tools or logged-out subscription sessions hard-fail with `subscription_auth_missing`; there is no API-key or local-model fallback.
