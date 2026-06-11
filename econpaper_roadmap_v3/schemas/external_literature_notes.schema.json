@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://econpaper.local/schemas/external_literature_notes.schema.json",
+  "title": "ExternalLiteratureNotes",
+  "type": "object",
+  "required": [
+    "version",
+    "notes"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "created_by": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "paper_key",
+          "bibtex_entry",
+          "what_it_did",
+          "relation_to_this_paper",
+          "source_url_or_doi"
+        ],
+        "properties": {
+          "paper_key": {
+            "type": "string"
+          },
+          "bibtex_entry": {
+            "type": "string"
+          },
+          "what_it_did": {
+            "type": "string"
+          },
+          "relation_to_this_paper": {
+            "type": "string"
+          },
+          "source_url_or_doi": {
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "doi",
+              "url",
+              "zotero",
+              "author_note",
+              "other"
+            ]
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "author_verified"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

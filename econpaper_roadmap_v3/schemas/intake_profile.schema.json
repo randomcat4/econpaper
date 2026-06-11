@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://econpaper.local/schemas/intake_profile.schema.json",
+  "title": "IntakeProfile",
+  "type": "object",
+  "required": [
+    "version",
+    "intake_profile_id",
+    "project",
+    "author_declared_design",
+    "contribution_statement",
+    "missing_author_inputs"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "intake_profile_id": {
+      "type": "string"
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "title_working": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "target_venue": {
+          "type": "string"
+        }
+      }
+    },
+    "author_declared_design": {
+      "type": "object",
+      "required": [
+        "design_type",
+        "declared_by_author"
+      ],
+      "properties": {
+        "design_type": {
+          "type": "string"
+        },
+        "declared_by_author": {
+          "type": "boolean"
+        },
+        "estimand": {
+          "type": "string"
+        },
+        "unit_of_observation": {
+          "type": "string"
+        },
+        "sample_scope": {
+          "type": "string"
+        }
+      }
+    },
+    "treatment_timing": {
+      "type": "object",
+      "properties": {
+        "treatment_name": {
+          "type": "string"
+        },
+        "timing_type": {
+          "type": "string"
+        },
+        "anticipation_window": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event_time_unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "institutional_context": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fact": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "author_provided",
+              "needs_source",
+              "external_note"
+            ]
+          }
+        }
+      }
+    },
+    "contribution_statement": {
+      "type": "string"
+    },
+    "research_motivation": {
+      "type": "string"
+    },
+    "outcome_magnitude_context": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "variable": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "mean": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "sd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "meaningful_benchmark": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "missing_author_inputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

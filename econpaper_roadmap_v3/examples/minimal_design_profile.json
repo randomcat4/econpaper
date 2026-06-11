@@ -1,0 +1,60 @@
+{
+  "version": "v3.0-draft",
+  "design_profile_id": "design_demo_001",
+  "intake_profile_id": "intake_demo_001",
+  "declared_by_author": true,
+  "declared_design": "staggered_did",
+  "checked_design": "staggered_did_with_twfe_only_artifacts",
+  "estimand": "ATT for treated firms around staggered policy adoption",
+  "treatment_timing": {
+    "timing_type": "staggered",
+    "anticipation_window": "two years before adoption"
+  },
+  "consistency_checks": [
+    {
+      "check": "treatment_timing",
+      "status": "pass",
+      "message": "Artifact timing summary is consistent with staggered adoption."
+    },
+    {
+      "check": "modern_estimator",
+      "status": "missing",
+      "message": "No Callaway-Sant'Anna, Sun-Abraham, did_imputation, or DRDID output found."
+    }
+  ],
+  "diagnostics_present": [
+    "event_study_plot",
+    "treatment_timing_summary"
+  ],
+  "diagnostics_missing": [
+    "modern_staggered_did_estimator",
+    "cohort_support_table"
+  ],
+  "claim_levels": {
+    "causal_language": {
+      "tier": "flag_and_confirm",
+      "overridable": true,
+      "reason": "Declared staggered DID but only TWFE artifacts are present.",
+      "suggested_rewrite": "The TWFE estimates are consistent with a decline, but modern staggered-DID estimates are needed before treating this as the primary causal estimate.",
+      "reviewer_questions": [
+        "How do estimates change under modern staggered DID?"
+      ],
+      "next_actions": [
+        "Run Callaway-Sant'Anna or Sun-Abraham estimator."
+      ]
+    },
+    "numeric_language": {
+      "tier": "safe",
+      "overridable": false,
+      "reason": "Numbers are rendered from ledger slots."
+    }
+  },
+  "reviewer_questions": [
+    "Are pre-treatment trends informative?",
+    "Is there cohort support across event time?"
+  ],
+  "next_actions": [
+    "Add modern staggered DID output",
+    "Add cohort support table"
+  ]
+}

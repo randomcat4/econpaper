@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://econpaper.local/schemas/design_profile.schema.json",
+  "title": "DesignProfile",
+  "type": "object",
+  "required": [
+    "version",
+    "design_profile_id",
+    "declared_by_author",
+    "declared_design",
+    "claim_levels"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "design_profile_id": {
+      "type": "string"
+    },
+    "intake_profile_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "declared_by_author": {
+      "type": "boolean"
+    },
+    "declared_design": {
+      "type": "string"
+    },
+    "checked_design": {
+      "type": "string"
+    },
+    "estimand": {
+      "type": "string"
+    },
+    "treatment_timing": {
+      "type": "object"
+    },
+    "consistency_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "check",
+          "status",
+          "message"
+        ],
+        "properties": {
+          "check": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "missing",
+              "contradiction",
+              "not_applicable"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "diagnostics_present": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "diagnostics_missing": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "claim_levels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "tier",
+          "overridable",
+          "reason"
+        ],
+        "properties": {
+          "tier": {
+            "enum": [
+              "safe",
+              "hard_block",
+              "flag_and_confirm",
+              "style_advice"
+            ]
+          },
+          "overridable": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "suggested_rewrite": {
+            "type": "string"
+          },
+          "reviewer_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "reviewer_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

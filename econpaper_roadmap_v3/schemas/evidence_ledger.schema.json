@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://econpaper.local/schemas/evidence_ledger.schema.json",
+  "title": "EvidenceLedger",
+  "type": "object",
+  "required": [
+    "version",
+    "run_id",
+    "artifacts",
+    "evidence_items",
+    "variable_semantics"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "artifact_type",
+          "path",
+          "hash"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "artifact_type": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "claimable": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "variable_semantics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "unit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mean": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "sd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "standardization": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "transformation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "winsorization": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "evidence_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "artifact_id",
+          "model_id",
+          "statistic",
+          "value"
+        ],
+        "properties": {
+          "evidence_id": {
+            "type": "string"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "sample_id": {
+            "type": "string"
+          },
+          "row": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "column": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cell_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "statistic": {
+            "type": "string"
+          },
+          "value": {
+            "type": [
+              "number",
+              "integer",
+              "string"
+            ]
+          },
+          "display_type": {
+            "enum": [
+              "coefficient",
+              "standard_error",
+              "p_value",
+              "t_stat",
+              "n",
+              "percent",
+              "percentage_point",
+              "mean",
+              "sd",
+              "other"
+            ]
+          },
+          "variable": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "diagnostic_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provenance_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,71 @@
+{
+  "version": "v3.0-draft",
+  "run_id": "run_demo_001",
+  "claims": [
+    {
+      "claim_id": "claim_main_001",
+      "claim_type": "main_result",
+      "text_template": "The preferred specification estimates a change of {{coef:claim_main_001}} in investment, equal to {{magnitude:claim_main_001}}.",
+      "rendered_text": "The preferred specification estimates a change of 0.030 in investment, equal to 0.40 standard deviations and 12% of the sample mean.",
+      "numeric_slots": [
+        "coef:claim_main_001",
+        "magnitude:claim_main_001"
+      ],
+      "citation_keys": [],
+      "status": "safe",
+      "tier": "safe",
+      "overridable": false,
+      "gate_id": "did_gate",
+      "gate_reason": "Numeric claim maps to evidence ledger; causal wording not used.",
+      "suggested_rewrite": null,
+      "reviewer_questions": [],
+      "next_actions": [],
+      "evidence_refs": [
+        {
+          "evidence_id": "ev_coef_001",
+          "artifact_id": "table_main",
+          "cell_ref": "row=treated_x_post,col=model_3"
+        }
+      ],
+      "author_asserts": false,
+      "author_override": {
+        "asserted": false,
+        "reason": "",
+        "original_status": "safe"
+      }
+    },
+    {
+      "claim_id": "claim_causal_001",
+      "claim_type": "identification",
+      "text_template": "The policy caused a decline in investment.",
+      "rendered_text": null,
+      "numeric_slots": [],
+      "citation_keys": [],
+      "status": "flag_and_confirm",
+      "tier": "flag_and_confirm",
+      "overridable": true,
+      "gate_id": "did_gate",
+      "gate_reason": "Staggered DID declared, but only TWFE artifacts are present.",
+      "suggested_rewrite": "The TWFE estimates are consistent with a decline under the maintained DID assumptions; modern staggered-DID estimates remain a priority.",
+      "reviewer_questions": [
+        "How do results change under Callaway-Sant'Anna or Sun-Abraham?"
+      ],
+      "next_actions": [
+        "Run a modern staggered DID estimator."
+      ],
+      "evidence_refs": [
+        {
+          "evidence_id": "ev_coef_001",
+          "artifact_id": "table_main",
+          "cell_ref": "row=treated_x_post,col=model_3"
+        }
+      ],
+      "author_asserts": true,
+      "author_override": {
+        "asserted": true,
+        "reason": "Author wants to preserve the stronger causal phrasing pending a modern estimator rerun.",
+        "original_status": "flag_and_confirm"
+      }
+    }
+  ]
+}

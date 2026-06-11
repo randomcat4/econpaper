@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://econpaper.local/schemas/claim_ledger.schema.json",
+  "title": "ClaimLedger",
+  "type": "object",
+  "required": [
+    "version",
+    "run_id",
+    "claims"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "claim_id",
+          "claim_type",
+          "text_template",
+          "status",
+          "tier",
+          "overridable",
+          "evidence_refs",
+          "author_override"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "claim_type": {
+            "enum": [
+              "data",
+              "main_result",
+              "robustness",
+              "mechanism",
+              "heterogeneity",
+              "identification",
+              "external_validity",
+              "literature",
+              "contribution",
+              "table_note",
+              "abstract"
+            ]
+          },
+          "text_template": {
+            "type": "string"
+          },
+          "rendered_text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "numeric_slots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "citation_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "enum": [
+              "safe",
+              "hard_block",
+              "flag_and_confirm",
+              "style_advice",
+              "author_asserted",
+              "cite_needed",
+              "author_input_needed"
+            ]
+          },
+          "tier": {
+            "enum": [
+              "safe",
+              "hard_block",
+              "flag_and_confirm",
+              "style_advice"
+            ]
+          },
+          "overridable": {
+            "type": "boolean"
+          },
+          "gate_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gate_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suggested_rewrite": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewer_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next_actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "evidence_id"
+              ],
+              "properties": {
+                "evidence_id": {
+                  "type": "string"
+                },
+                "artifact_id": {
+                  "type": "string"
+                },
+                "cell_ref": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "author_asserts": {
+            "type": "boolean",
+            "default": false
+          },
+          "author_override": {
+            "type": "object",
+            "required": [
+              "asserted",
+              "reason",
+              "original_status"
+            ],
+            "properties": {
+              "asserted": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "original_status": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

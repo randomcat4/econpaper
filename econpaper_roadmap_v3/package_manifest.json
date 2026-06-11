@@ -1,0 +1,134 @@
+{
+  "package": "econpaper_roadmap_v3",
+  "version": "v3.0-draft",
+  "description": "Roadmap package for econpaper v3: safety foundation, content layer, iteration layer, linter and generation P0 forms.",
+  "generated_files": [
+    {
+      "path": "00_v3_executive_changes.md",
+      "bytes": 6560,
+      "sha256": "f4e86347d20f28e7a25879119bc2d0a47ecd0124cfcc42c18f3e2801a1e6b0fe"
+    },
+    {
+      "path": "01_product_architecture.md",
+      "bytes": 5520,
+      "sha256": "c54afd85d0d403edc884092c398a8a716acc982ee12b2da76e2c993a5486a4ad"
+    },
+    {
+      "path": "02_p0_body_writing_chain.md",
+      "bytes": 14823,
+      "sha256": "3bea0d907a3da3189eb43f84c29e6bd0636685fc35f35c0c2841b4a68555827f"
+    },
+    {
+      "path": "03_citation_safety_not_search.md",
+      "bytes": 5872,
+      "sha256": "2e80e4ba5afc4171f857311176bc07d2a17ee06445f53817d154b56eb6b8431f"
+    },
+    {
+      "path": "04_design_specific_claim_gates.md",
+      "bytes": 14552,
+      "sha256": "223e891e7b1f1f9443f7df9223334d8815b349f0ade00ece95098b039839084f"
+    },
+    {
+      "path": "05_todo_rewrite.md",
+      "bytes": 6921,
+      "sha256": "aa90cad69d9dc061c967530e18fcf0d7ee4701224356e7eaf927fab044be05bc"
+    },
+    {
+      "path": "06_quality_and_false_confidence_tests.md",
+      "bytes": 8862,
+      "sha256": "21a4167c595b7bce327ee023b19233c2423496339fe994bcd7e99c57be937001"
+    },
+    {
+      "path": "07_user_experience_pack.md",
+      "bytes": 6194,
+      "sha256": "e73a5c35de8a6d4c0c6cdd477b951c6f849d73cb88366290b04447a62b2d4937"
+    },
+    {
+      "path": "08_implementation_order.md",
+      "bytes": 4231,
+      "sha256": "da6cc4049226cb3c30843a4ae3376308fc5c6f351a55c9635de4ba19b6677703"
+    },
+    {
+      "path": "DELIVERY_SELF_CHECK.md",
+      "bytes": 1777,
+      "sha256": "a3a23c04cc4aee6c387261e13366ecc27cf927cde8ec100af7dfeb29b90d92ce"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5927,
+      "sha256": "6d810fec312cfa7f162a132d1f5ec2e57a64bce14dfc8dd2f024d4acec21c266"
+    },
+    {
+      "path": "checklists/design_gate_checklist.md",
+      "bytes": 1960,
+      "sha256": "e425c5f87b93967cefe3fcff14ab0b927aef4738cc5c82565275ad2e6d47f930"
+    },
+    {
+      "path": "checklists/lint_mode_checklist.md",
+      "bytes": 1176,
+      "sha256": "71af68cfe721e1eb1a40423ddd43b294acc03b3d8811c7fd5ec5efbc34217b03"
+    },
+    {
+      "path": "checklists/p0_release_gate.md",
+      "bytes": 2119,
+      "sha256": "44037bfb39589f901b59ffb74f39c21b775866b66fd0a31b1357064d25ae758c"
+    },
+    {
+      "path": "econpaper_roadmap_v3_combined.md",
+      "bytes": 86696,
+      "sha256": "2df9b11805a19be0de75130d1621ab5dedbcb8e432257f4e135e8851a8881644"
+    },
+    {
+      "path": "examples/minimal_claim_ledger.json",
+      "bytes": 2465,
+      "sha256": "63acd4cc0018dec967a35e63c5a03fe0d9dafb89424e85d8c6505fa62b25eae5"
+    },
+    {
+      "path": "examples/minimal_design_profile.json",
+      "bytes": 1897,
+      "sha256": "df419adbf448782d8d2ab7e35a0b4c0b071593f9c08aae39e51a4e12a702b172"
+    },
+    {
+      "path": "examples/minimal_intake_profile.json",
+      "bytes": 1424,
+      "sha256": "f5878fc504e2fc08530ae909bd5377016e398637ccdfd342a062378d55f0efb8"
+    },
+    {
+      "path": "schemas/citation_safety_report.schema.json",
+      "bytes": 1662,
+      "sha256": "f56e61e2b1f759ae1ee8fd2b5e90a5900b4c68c3835d7ced5376c1d06470ddf3"
+    },
+    {
+      "path": "schemas/claim_ledger.schema.json",
+      "bytes": 4060,
+      "sha256": "611e1d3f7ac44e81e03571be518f5ef81dfa964d1f9361ab33fab55df898fb17"
+    },
+    {
+      "path": "schemas/design_profile.schema.json",
+      "bytes": 2723,
+      "sha256": "51da78cb755886d3e94ea7a8571840e48efc6c95df7e1052323d0aad29d30293"
+    },
+    {
+      "path": "schemas/evidence_ledger.schema.json",
+      "bytes": 4005,
+      "sha256": "69b9f67e4edfb697b8f2c74b402b2d5ed45364d3a927642bb4e709a46589d3c7"
+    },
+    {
+      "path": "schemas/external_literature_notes.schema.json",
+      "bytes": 1501,
+      "sha256": "8576d639c3e2c8129759a5f16b59c99fe382058d928af13a4d2c30c66dc2beab"
+    },
+    {
+      "path": "schemas/intake_profile.schema.json",
+      "bytes": 3019,
+      "sha256": "a75044a10e08eed5d6e353f5eaa02890f612c58222c81942e71888b844d3b609"
+    }
+  ],
+  "principles": [
+    "Safety is the foundation, not the selling point.",
+    "Advisor not arbiter, with author override except for three hard-block classes.",
+    "Declare-and-confirm intake replaces design inference as the default.",
+    "Manuscript is a view over the claim ledger.",
+    "No P0 literature search; citation safety is P0."
+  ]
+}

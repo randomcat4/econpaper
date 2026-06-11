@@ -1,0 +1,20 @@
+[project]
+name = "econpaper"
+version = "0.1.0"
+description = "Economics and finance manuscript safety, linter, and draft-package tooling."
+requires-python = ">=3.11"
+
+[project.scripts]
+econpaper = "econpaper.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["econpaper", "econpaper.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

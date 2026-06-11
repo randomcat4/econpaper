@@ -1,0 +1,43 @@
+{
+  "version": "v3.0-draft",
+  "intake_profile_id": "intake_demo_001",
+  "project": {
+    "title_working": "Policy Timing and Firm Investment",
+    "field": "finance",
+    "target_venue": "jf-jfe"
+  },
+  "author_declared_design": {
+    "design_type": "staggered_did",
+    "declared_by_author": true,
+    "estimand": "ATT for treated firms around staggered policy adoption",
+    "unit_of_observation": "firm-year",
+    "sample_scope": "US public firms, 2005-2020"
+  },
+  "treatment_timing": {
+    "treatment_name": "Policy adoption",
+    "timing_type": "staggered",
+    "anticipation_window": "two years before adoption",
+    "event_time_unit": "year"
+  },
+  "institutional_context": [
+    {
+      "fact": "Policy adoption occurred at different times across states.",
+      "source": "author",
+      "confidence": "author_provided"
+    }
+  ],
+  "contribution_statement": "The paper studies how staggered policy adoption affected firm investment using firm-year panel data.",
+  "research_motivation": "The author wants to understand whether policy timing altered real investment decisions.",
+  "outcome_magnitude_context": [
+    {
+      "variable": "investment_rate",
+      "unit": "percentage points of assets",
+      "mean": 0.25,
+      "sd": 0.075,
+      "meaningful_benchmark": "10% of the sample mean is economically meaningful"
+    }
+  ],
+  "missing_author_inputs": [
+    "Preferred related-literature references"
+  ]
+}
