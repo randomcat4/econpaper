@@ -1,21 +1,21 @@
 ---
 name: skill4econ
-description: Repo-local EvoScientist capability pack for environmental economics, economics, finance, causal inference, Stata/Python econometrics, and AI x econometrics wrappers. Use existing tested backends and inspect manifests before making empirical claims.
+description: Repo-local econpaper capability pack for environmental economics, economics, finance, causal inference, Stata/Python econometrics, and AI x econometrics wrappers. Use existing tested backends and inspect manifests before making empirical claims.
 tags: [economics, environmental-economics, finance, causal-inference, stata, python]
 ---
 
 # skill4econ
 
-Use the CLI in this folder when an EvoScientist agent needs a callable
+Use the CLI in this folder when an econpaper agent needs a callable
 econometric method.
 
 Runtime code lives in `src/skill4econ`. Domain/reporting skill files live in
-`skills/`. The EasyPaper economics/finance manuscript-generation fork is kept
+`skills/`. The EasyPaper-derived economics/finance manuscript-generation layer is kept
 separate at `integrations/easypaper-econ-finance/`.
 
 ## Required Workflow
 
-1. Run from `D:\myproject\EvoScientist`.
+1. Run from `D:\myproject\econpaper\skill4econ`.
 2. Prefer `conda run -n base python -m skill4econ.cli ...`.
 3. Use `--plan` or `--dry-run` before `--run` for unfamiliar methods.
 4. Read `manifest.json` and `audit.json` after every run.
@@ -36,7 +36,7 @@ a success.
 
 DEA/SBM/Malmquist runs in-process through the vendored backend at
 `skill4econ.backends.dea`. SFA is still external-only. To override the DEA
-backend with a custom fork, set `spec.dea.backend_path` or the
+backend with a custom implementation, set `spec.dea.backend_path` or the
 `SKILL4ECON_DEA_BACKEND` environment variable.
 
 ## Stata Discovery

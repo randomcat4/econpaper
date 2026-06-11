@@ -1,6 +1,6 @@
 # skill4econ
 
-Repo-local, agent-callable econometrics capability pack for EvoScientist.
+Repo-local, agent-callable econometrics capability pack for econpaper.
 
 This folder is intentionally an orchestration layer, not a new econometrics
 library. Wrappers call existing Stata/Python backends, write machine-readable
@@ -14,7 +14,7 @@ repository root:
 - `skills/`: agent-facing skill files.
 - `examples/`: runnable specs and fixture data.
 - `docs/`: contracts, runbooks, known bugs, and roadmaps.
-- `integrations/easypaper-econ-finance/`: EasyPaper fork snapshot for
+- `integrations/easypaper-econ-finance/`: EasyPaper-derived snapshot for
   economics and finance manuscript generation.
 
 See `docs/REPO_STRUCTURE.md` for the full map.

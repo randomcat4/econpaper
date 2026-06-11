@@ -1,6 +1,6 @@
 # EasyPaper Econ/Finance Integration
 
-This folder contains the first-stage EasyPaper fork snapshot for generating
+This folder contains the EasyPaper-derived snapshot for generating
 economics and finance manuscript drafts.
 
 ## What is included
@@ -11,14 +11,14 @@ economics and finance manuscript drafts.
   Introduction, Data, Empirical Strategy, Results, Robustness, Conclusion.
 - File-backed empirical artifact manifests.
 - Guards that forbid autonomous AI generation of empirical result figures.
-- `scripts/run_econ_paper.py` for local runs without EvoScientist.
+- `scripts/run_econ_paper.py` for standalone local runs.
 - Mock AER/JFE proof-of-concept outputs through tests.
 
 ## Important boundary
 
 This integration is intentionally separate from the `skill4econ` core package.
 The core package runs econometric methods and produces auditable artifacts. This
-EasyPaper fork consumes paper requests and file-backed artifacts to assemble
+The EasyPaper-derived layer consumes paper requests and file-backed artifacts to assemble
 manuscript drafts.
 
 ## Smoke commands

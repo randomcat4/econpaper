@@ -1,6 +1,6 @@
 # Agent Usage
 
-Use `skill4econ` when an EvoScientist agent needs an econometric model as a
+Use `skill4econ` when an econpaper agent needs an econometric model as a
 callable tool.
 
 ## Contract

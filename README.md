@@ -1,8 +1,8 @@
 # econpaper
 
 `econpaper` is an independent economics and finance paper-generation workspace.
-It borrows the EasyPaper skeleton, but it is not maintained as an upstream
-EasyPaper fork workflow. Future changes are expected to diverge substantially.
+It borrows the EasyPaper skeleton, but it is maintained as its own project and
+is expected to diverge substantially.
 
 ## Layout
 
@@ -14,16 +14,12 @@ EasyPaper fork workflow. Future changes are expected to diverge substantially.
 
 ## Current Baseline
 
-EasyPaper source imported from:
+EasyPaper skeleton provenance:
 
-- Former remote: `https://github.com/randomcat4/EasyPaper.git`
-- Former branch: `evo/econ-finance-tier1`
 - Commit: `9d43889cbbdffb05deedc4812d4b8e3afb6f0257`
 
-skill4econ source imported from:
+skill4econ provenance:
 
-- Former remote: `https://github.com/randomcat4/skill4econ.git`
-- Former branch: `main`
 - Commit: `a4476f5bc853c0d93fe540f5d3b3da4aa19aa685`
 
 ## Design Boundary
@@ -32,7 +28,7 @@ EasyPaper must not implement OLS, FE, DID, IV, RDD, DML, spatial, DEA,
 Fama-MacBeth, or other estimators. It consumes file-backed `skill4econ`
 artifacts, applies claim gates, and generates manuscript/reporting outputs.
 
-Empirical claims are allowed only when upstream `skill4econ` outputs are
+Empirical claims are allowed only when `skill4econ` outputs are
 claimable, paper-ready, have a main claim available, and have no blocking
 reviewer risk.
 

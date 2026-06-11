@@ -19,7 +19,7 @@ runtime code under `src/skill4econ`.
 
 ## Integrated companion projects
 
-- `integrations/easypaper-econ-finance/`: EasyPaper fork snapshot adapted for
+- `integrations/easypaper-econ-finance/`: EasyPaper-derived snapshot adapted for
   economics and finance paper generation. It is kept separate from the core
   econometrics package so review and future syncs are easier.
 
