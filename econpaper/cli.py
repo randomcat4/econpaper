@@ -9,6 +9,7 @@ from .intake import write_intake_profile
 from .linting import run_lint
 from .numeric_renderer import write_numeric_rendering
 from .run_validation import write_run_validation
+from .table_generator import write_publication_table
 
 
 def _cmd_validate_run(args: argparse.Namespace) -> int:
@@ -64,6 +65,21 @@ def _cmd_render_numbers(args: argparse.Namespace) -> int:
         slots_path=args.slots,
         out_dir=args.out,
         allow_raw_numbers=args.allow_raw_numbers,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_tables(args: argparse.Namespace) -> int:
+    result = write_publication_table(
+        evidence_ledger_path=args.evidence_ledger,
+        out_dir=args.out,
+        variable_labels_path=args.variable_labels,
+        model_metadata_path=args.model_metadata,
+        caption=args.caption,
+        label=args.label,
+        star_policy=args.star_policy,
+        table_name=args.table_name,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -137,6 +153,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Permit raw numeric prose in the template. Intended only for migration/debugging.",
     )
     render_numbers.set_defaults(func=_cmd_render_numbers)
+
+    tables = sub.add_parser(
+        "tables",
+        help="Generate publication-ready booktabs and Markdown tables from evidence ledger cells.",
+    )
+    tables.add_argument("--evidence-ledger", required=True, type=Path)
+    tables.add_argument("--out", required=True, type=Path)
+    tables.add_argument("--variable-labels", type=Path)
+    tables.add_argument("--model-metadata", type=Path)
+    tables.add_argument("--caption", default="Main Results")
+    tables.add_argument("--label", default="tab:main_results")
+    tables.add_argument("--star-policy", default="conventional", choices=["conventional", "none"])
+    tables.add_argument("--table-name", default="table_main")
+    tables.set_defaults(func=_cmd_tables)
 
     return parser
 
