@@ -7,6 +7,7 @@ from pathlib import Path
 from .claim_ledger import write_claim_ledger
 from .coherence import write_global_coherence
 from .evidence import write_evidence_ledger
+from .incremental_rerun import write_incremental_rerun
 from .intake import write_intake_profile
 from .linting import run_lint
 from .numeric_renderer import write_numeric_rendering
@@ -120,6 +121,17 @@ def _cmd_coherence(args: argparse.Namespace) -> int:
         claim_ledger_path=args.claim_ledger,
         table_paths=args.table_path,
         out_dir=args.out,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_rerun(args: argparse.Namespace) -> int:
+    result = write_incremental_rerun(
+        previous_pack_dir=args.previous_pack,
+        updated_pack_dir=args.updated_pack,
+        out_dir=args.out,
+        allow_regenerate_protected=args.allow_regenerate_protected,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -241,6 +253,16 @@ def build_parser() -> argparse.ArgumentParser:
     coherence.add_argument("--table-path", action="append", type=Path)
     coherence.add_argument("--out", required=True, type=Path)
     coherence.set_defaults(func=_cmd_coherence)
+
+    rerun = sub.add_parser(
+        "rerun",
+        help="Create an incremental rerun pack with claim-status diffs and protected-section handling.",
+    )
+    rerun.add_argument("--previous-pack", required=True, type=Path)
+    rerun.add_argument("--updated-pack", required=True, type=Path)
+    rerun.add_argument("--out", required=True, type=Path)
+    rerun.add_argument("--allow-regenerate-protected", action="store_true")
+    rerun.set_defaults(func=_cmd_rerun)
 
     return parser
 
