@@ -1,0 +1,5 @@
+{
+  "method": "spatial_w_audit",
+  "id": "city",
+  "weights": "weights.csv"
+}

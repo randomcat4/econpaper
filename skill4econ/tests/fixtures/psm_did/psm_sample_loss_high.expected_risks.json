@@ -1,0 +1,6 @@
+{
+  "fixture": "psm_sample_loss_high",
+  "expected_risks": [
+    "PSM_SAMPLE_LOSS_HIGH"
+  ]
+}

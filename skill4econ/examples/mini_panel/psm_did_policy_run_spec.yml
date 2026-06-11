@@ -1,0 +1,11 @@
+data: skill4econ/examples/mini_panel/mini_panel.csv
+data_contract: skill4econ/examples/mini_panel/data_contract.yml
+id: firm_id
+time: year
+y: y
+treat: treat
+post: post
+x: [x1, x2]
+cluster: firm_id
+drdid_sample_if: inlist(year, 2018, 2019)
+output_dir: skill4econ/runs

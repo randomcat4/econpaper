@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "skill4econ manifest.json",
+  "type": "object",
+  "required": ["status", "method", "engine", "run_dir", "timestamp_utc", "rerun_command"],
+  "properties": {
+    "status": {"type": "string"},
+    "method": {"type": "string"},
+    "engine": {"type": "string"},
+    "run_dir": {"type": "string"},
+    "rerun_command": {"type": "string"},
+    "agent_status": {
+      "enum": [
+        "claimable_success",
+        "success_diagnostic_only",
+        "success_sensitivity_only",
+        "success_adapter_only",
+        "success_not_for_claim",
+        "partial_backend_unavailable",
+        "blocked_missing_dependency",
+        "blocked_interface_only",
+        "blocked_parser_only",
+        "skipped",
+        "failed"
+      ]
+    }
+  }
+}

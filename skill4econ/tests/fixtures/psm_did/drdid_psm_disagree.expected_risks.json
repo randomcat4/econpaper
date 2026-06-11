@@ -1,0 +1,6 @@
+{
+  "fixture": "drdid_psm_disagree",
+  "expected_risks": [
+    "DRDID_PSM_DID_DISAGREE"
+  ]
+}

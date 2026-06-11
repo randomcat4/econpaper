@@ -1,0 +1,24 @@
+{
+  "id": "unit",
+  "time": "year",
+  "y": "y",
+  "treat": "treat",
+  "x": [
+    "x1"
+  ],
+  "psm_grid_neighbors": [
+    1,
+    5
+  ],
+  "psm_grid_calipers": [
+    0.01,
+    0.05
+  ],
+  "psm_grid_replacement": [
+    true
+  ],
+  "balance_vars": [
+    "x1",
+    "x2"
+  ]
+}

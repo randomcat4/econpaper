@@ -1,0 +1,6 @@
+{
+  "fixture": "few_cohorts",
+  "expected_risks": [
+    "FEW_TREATED_COHORTS"
+  ]
+}

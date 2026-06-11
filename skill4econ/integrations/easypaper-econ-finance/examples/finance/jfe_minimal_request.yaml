@@ -1,0 +1,12 @@
+title: "Bank Capital Requirements and Corporate Investment"
+venue: "journal-of-financial-economics"
+abstract_hint: "Study how bank capital regulation affects credit supply and corporate investment."
+idea_hypothesis: "Higher bank capital requirements reduce credit supply to exposed firms and affect corporate investment."
+data: "Loan-level bank-firm matched data combined with firm balance sheets and bank regulatory capital ratios."
+empirical_strategy: "Exploit differential exposure to regulatory capital shocks across banks and compare borrowing firms before and after the shock using firm and time fixed effects."
+results: "Firms borrowing from more constrained banks experience lower loan growth and reduce investment relative to otherwise similar firms."
+robustness: "Results are robust to alternative exposure definitions, matched samples, excluding crisis years, and placebo shocks."
+references: []
+figures_manifest: "examples/finance/artifacts/manifest.json"
+target_pages: 25
+compile_pdf: false

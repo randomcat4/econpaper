@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "skill4econ model_table",
+  "description": "CSV table must include at least one header row. JSON model tables should be arrays or objects."
+}

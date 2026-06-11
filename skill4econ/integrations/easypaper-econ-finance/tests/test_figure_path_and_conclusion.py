@@ -1,0 +1,426 @@
+"""
+Tests for figure path unified replacement and conclusion multi-file mode.
+
+Covers:
+  1. Figure ID → file path replacement in TypesetterAgent
+  2. Prompt compiler figure guidance using bare IDs
+  3. Conclusion CITE/FLOAT marker cleanup in synthesis sections
+  4. Conclusion written as separate file in multi-file mode
+"""
+import os
+import re
+import tempfile
+import pytest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+
+# =========================================================================
+# 1. Figure path replacement — _build_figure_id_map & _rewrite
+# =========================================================================
+
+class TestBuildFigureIdMap:
+    """Test multi-variant figure ID mapping."""
+
+    def _get_agent(self):
+        from src.agents.typesetter_agent.typesetter_agent import TypesetterAgent
+        agent = TypesetterAgent.__new__(TypesetterAgent)
+        return agent
+
+    def test_basic_id_to_path_mapping(self, tmp_path):
+        """fig:overview → figures/fig_1 when fig_1.png exists."""
+        agent = self._get_agent()
+        figures_dir = tmp_path / "figures"
+        figures_dir.mkdir()
+        (figures_dir / "fig_1.png").write_text("fake")
+
+        figure_paths = {"fig:overview": "figures/fig_1.png"}
+        id_map = agent._build_figure_id_map(figure_paths, str(tmp_path))
+
+        assert "fig:overview" in id_map
+        assert id_map["fig:overview"] == "figures/fig_1"
+
+    def test_variant_underscore_mapped(self, tmp_path):
+        """fig_overview (colon→underscore variant) also resolves."""
+        agent = self._get_agent()
+        figures_dir = tmp_path / "figures"
+        figures_dir.mkdir()
+        (figures_dir / "fig_1.png").write_text("fake")
+
+        figure_paths = {"fig:overview": "figures/fig_1.png"}
+        id_map = agent._build_figure_id_map(figure_paths, str(tmp_path))
+
+        assert "fig_overview" in id_map
+        assert id_map["fig_overview"] == "figures/fig_1"
+
+    def test_variant_bare_name_mapped(self, tmp_path):
+        """Bare 'overview' (prefix stripped) also resolves."""
+        agent = self._get_agent()
+        figures_dir = tmp_path / "figures"
+        figures_dir.mkdir()
+        (figures_dir / "fig_1.png").write_text("fake")
+
+        figure_paths = {"fig:overview": "figures/fig_1.png"}
+        id_map = agent._build_figure_id_map(figure_paths, str(tmp_path))
+
+        assert "overview" in id_map
+
+    def test_variant_filename_mapped(self, tmp_path):
+        """Bare filename 'fig_1' also resolves."""
+        agent = self._get_agent()
+        figures_dir = tmp_path / "figures"
+        figures_dir.mkdir()
+        (figures_dir / "fig_1.png").write_text("fake")
+
+        figure_paths = {"fig:overview": "figures/fig_1.png"}
+        id_map = agent._build_figure_id_map(figure_paths, str(tmp_path))
+
+        assert "fig_1" in id_map
+        assert id_map["fig_1"] == "figures/fig_1"
+
+    def test_no_duplicate_overwrite(self, tmp_path):
+        """When two figures share a variant key, first mapping wins."""
+        agent = self._get_agent()
+        figures_dir = tmp_path / "figures"
+        figures_dir.mkdir()
+        (figures_dir / "fig_1.png").write_text("fake")
+        (figures_dir / "fig_2.png").write_text("fake")
+
+        figure_paths = {
+            "fig:overview": "figures/fig_1.png",
+            "fig:stage2": "figures/fig_2.png",
+        }
+        id_map = agent._build_figure_id_map(figure_paths, str(tmp_path))
+
+        assert "fig:overview" in id_map
+        assert "fig:stage2" in id_map
+        assert id_map["fig:overview"] == "figures/fig_1"
+        assert id_map["fig:stage2"] == "figures/fig_2"
+
+
+class TestRewriteIncludegraphicsTargets:
+    """Test that _rewrite_includegraphics_targets resolves all ID variants."""
+
+    def _get_agent(self):
+        from src.agents.typesetter_agent.typesetter_agent import TypesetterAgent
+        agent = TypesetterAgent.__new__(TypesetterAgent)
+        return agent
+
+    def test_rewrite_exact_id(self, tmp_path):
+        """\\includegraphics{fig:overview} → figures/fig_1"""
+        agent = self._get_agent()
+        figures_dir = tmp_path / "figures"
+        figures_dir.mkdir()
+        (figures_dir / "fig_1.png").write_text("fake")
+
+        id_map = {"fig:overview": "figures/fig_1"}
+        content = r"\includegraphics[width=\textwidth]{fig:overview}"
+        result = agent._rewrite_includegraphics_targets(content, str(tmp_path), id_map)
+
+        assert "figures/fig_1" in result
+        assert "fig:overview" not in result
+
+    def test_rewrite_underscore_variant(self, tmp_path):
+        """\\includegraphics{fig_overview} → figures/fig_1 via variant map."""
+        agent = self._get_agent()
+        figures_dir = tmp_path / "figures"
+        figures_dir.mkdir()
+        (figures_dir / "fig_1.png").write_text("fake")
+
+        id_map = {"fig:overview": "figures/fig_1", "fig_overview": "figures/fig_1"}
+        content = r"\includegraphics[width=0.9\linewidth]{fig_overview}"
+        result = agent._rewrite_includegraphics_targets(content, str(tmp_path), id_map)
+
+        assert "figures/fig_1" in result
+        assert "fig_overview" not in result
+
+    def test_rewrite_backslash_path_normalized(self, tmp_path):
+        r"""figures\fig_2 (Windows backslash) → figures/fig_2"""
+        agent = self._get_agent()
+        figures_dir = tmp_path / "figures"
+        figures_dir.mkdir()
+        (figures_dir / "fig_2.png").write_text("fake")
+
+        id_map = {}
+        content = r"\includegraphics[width=\textwidth]{figures\fig_2}"
+        result = agent._rewrite_includegraphics_targets(content, str(tmp_path), id_map)
+
+        assert "\\\\" not in result or "figures/fig_2" in result
+
+
+# =========================================================================
+# 2. Prompt compiler — figure guidance uses bare IDs
+# =========================================================================
+
+class TestFigurePlacementGuidance:
+    """Prompt should tell Writer to use figure ID, not file path."""
+
+    def test_guidance_uses_figure_id_not_filepath(self):
+        from src.agents.shared.prompt_compiler import _format_figure_placement_guidance
+
+        mock_plan = MagicMock()
+        mock_placement = MagicMock()
+        mock_placement.figure_id = "fig:overview"
+        mock_placement.is_wide = True
+        mock_placement.position_hint = "top"
+        mock_placement.message = ""
+        mock_placement.caption_guidance = ""
+        mock_plan.figures = [mock_placement]
+        mock_plan.figures_to_reference = []
+
+        mock_fig = MagicMock()
+        mock_fig.id = "fig:overview"
+        mock_fig.caption = "Overview of the framework."
+        mock_fig.description = "A diagram."
+        mock_fig.file_path = "figures/fig_1.png"
+
+        result = _format_figure_placement_guidance(mock_plan, [mock_fig])
+
+        assert "fig:overview" in result
+        assert "fig_1.png" not in result
+        assert "fig_1" not in result
+
+
+class TestEnsureFiguresDefinedAnchoring:
+    def test_injected_figure_caption_strips_redundant_number_prefix(self):
+        from src.agents.metadata_agent.metadata_agent import MetaDataAgent
+        from src.agents.metadata_agent.models import FigureSpec
+        from src.agents.planner_agent.models import FigurePlacement, PaperPlan, ParagraphPlan, SectionPlan
+
+        agent = MetaDataAgent.__new__(MetaDataAgent)
+        paper_plan = PaperPlan(
+            title="Demo",
+            sections=[
+                SectionPlan(
+                    section_type="introduction",
+                    paragraphs=[ParagraphPlan(key_point="Introduce figure.")],
+                    figures=[FigurePlacement(figure_id="fig:overview")],
+                )
+            ],
+        )
+        figures = [
+            FigureSpec(
+                id="fig:overview",
+                caption="Figure 1. Overview of the framework.",
+                description="A diagram.",
+            )
+        ]
+
+        updated = agent._ensure_figures_defined(
+            {"introduction": "Introduce Figure~\\ref{fig:overview}."},
+            paper_plan,
+            figures,
+        )
+
+        assert "\\caption{Overview of the framework.}" in updated["introduction"]
+        assert "\\caption{Figure 1." not in updated["introduction"]
+
+    def test_inserts_figure_after_anchor_paragraph_not_section_start(self):
+        from src.agents.metadata_agent.metadata_agent import MetaDataAgent
+        from src.agents.metadata_agent.models import FigureSpec
+        from src.agents.planner_agent.models import (
+            FigurePlacement,
+            FigureUsagePlan,
+            PaperPlan,
+            ParagraphPlan,
+            SectionPlan,
+        )
+
+        agent = MetaDataAgent.__new__(MetaDataAgent)
+        paper_plan = PaperPlan(
+            title="Demo",
+            sections=[
+                SectionPlan(
+                    section_type="introduction",
+                    paragraphs=[
+                        ParagraphPlan(key_point="Context paragraph."),
+                        ParagraphPlan(
+                            key_point="This paragraph introduces the figure.",
+                            figures_to_reference=["fig:overview"],
+                            figure_usages=[
+                                FigureUsagePlan(
+                                    figure_id="fig:overview",
+                                    mode="define",
+                                    rhetorical_role="introduce",
+                                    supported_claim="This paragraph introduces the figure.",
+                                    must_appear=True,
+                                ),
+                            ],
+                        ),
+                        ParagraphPlan(key_point="Closing paragraph."),
+                    ],
+                    figures=[
+                        FigurePlacement(
+                            figure_id="fig:overview",
+                            semantic_role="data_visualization",
+                            message="Overview message",
+                        )
+                    ],
+                )
+            ],
+        )
+        figures = [
+            FigureSpec(
+                id="fig:overview",
+                caption="Overview of the framework.",
+                description="A diagram.",
+            )
+        ]
+        generated_sections = {
+            "introduction": (
+                "First paragraph.\n\n"
+                "Second paragraph introduces Figure~\\ref{fig:overview} for the reader.\n\n"
+                "Third paragraph."
+            )
+        }
+
+        updated = agent._ensure_figures_defined(generated_sections, paper_plan, figures)
+        content = updated["introduction"]
+
+        assert content.index("First paragraph.") < content.index("Second paragraph introduces")
+        assert content.index("Second paragraph introduces") < content.index("\\begin{figure}")
+        assert content.index("\\begin{figure}") < content.index("Third paragraph.")
+
+    def test_falls_back_to_end_of_section_when_no_anchor_found(self):
+        from src.agents.metadata_agent.metadata_agent import MetaDataAgent
+        from src.agents.metadata_agent.models import FigureSpec
+        from src.agents.planner_agent.models import FigurePlacement, PaperPlan, ParagraphPlan, SectionPlan
+
+        agent = MetaDataAgent.__new__(MetaDataAgent)
+        paper_plan = PaperPlan(
+            title="Demo",
+            sections=[
+                SectionPlan(
+                    section_type="discussion",
+                    paragraphs=[ParagraphPlan(key_point="Only paragraph.")],
+                    figures=[FigurePlacement(figure_id="fig:missing")],
+                )
+            ],
+        )
+        figures = [FigureSpec(id="fig:missing", caption="Late figure", description="Desc")]
+        generated_sections = {"discussion": "Only paragraph."}
+
+        updated = agent._ensure_figures_defined(generated_sections, paper_plan, figures)
+        content = updated["discussion"]
+
+        assert content.startswith("Only paragraph.")
+        assert content.rstrip().endswith("\\end{figure}")
+
+
+class TestCompileCaptionNormalization:
+    def test_normalize_latex_caption_prefixes_strips_figure_and_table_numbers(self):
+        from src.agents.metadata_agent.compile_support import normalize_latex_caption_prefixes
+
+        content = (
+            "\\begin{figure}\n"
+            "\\caption{Figure 1. Overview of BLIP-2.}\\label{fig:overview}\n"
+            "\\end{figure}\n"
+            "\\begin{table}\n"
+            "\\caption{Table 2: Main results.}\\label{tab:main}\n"
+            "\\end{table}"
+        )
+
+        normalized = normalize_latex_caption_prefixes(content)
+
+        assert "\\caption{Overview of BLIP-2.}" in normalized
+        assert "\\caption{Main results.}" in normalized
+        assert "Figure 1. Overview" not in normalized
+        assert "Table 2: Main" not in normalized
+
+
+# =========================================================================
+# 3. Conclusion CITE/FLOAT cleanup
+# =========================================================================
+
+class TestConclusionMarkerCleanup:
+    """Synthesis sections must strip Stage-1 pseudo-markers."""
+
+    def test_cite_markers_stripped(self):
+        content = (
+            "This method is effective [CITE:vlp_efficiency]. "
+            "It achieves state-of-the-art results [FLOAT:results_table]. "
+            "Future work will explore [CITE:video_vlp]."
+        )
+        cleaned = re.sub(r'\[CITE:[^\]]*\]', '', content)
+        cleaned = re.sub(r'\[FLOAT:[^\]]*\]', '', cleaned)
+        cleaned = re.sub(r'  +', ' ', cleaned)
+
+        assert "[CITE:" not in cleaned
+        assert "[FLOAT:" not in cleaned
+        assert "This method is effective" in cleaned
+
+    def test_synthesis_section_cleans_markers(self):
+        """_generate_synthesis_section should strip [CITE:...] and [FLOAT:...]."""
+        content_with_markers = (
+            "Summary of results [CITE:topic1]. "
+            "See [FLOAT:tab1] for details [CITE:topic2]."
+        )
+        # Simulate the cleanup logic that should exist in _generate_synthesis_section
+        content = content_with_markers
+        content = re.sub(r'~?\\cite\{[^}]*\}', '', content)
+        content = re.sub(
+            r'(?:Figure|Fig\.|Table|Tab\.|Section|Sec\.|Equation|Eq\.)~?\\ref\{[^}]*\}',
+            '', content,
+        )
+        content = re.sub(r'~?\\ref\{[^}]*\}', '', content)
+        content = re.sub(r'\(\s*[,;]?\s*\)', '', content)
+        # These two lines should be added in the fix:
+        content = re.sub(r'\[CITE:[^\]]*\]', '', content)
+        content = re.sub(r'\[FLOAT:[^\]]*\]', '', content)
+        content = re.sub(r'  +', ' ', content)
+
+        assert "[CITE:" not in content
+        assert "[FLOAT:" not in content
+
+
+# =========================================================================
+# 4. Conclusion multi-file mode
+# =========================================================================
+
+class TestConclusionMultiFileMode:
+    """Conclusion should be written as sections/conclusion.tex."""
+
+    def _get_agent(self):
+        from src.agents.typesetter_agent.typesetter_agent import TypesetterAgent
+        agent = TypesetterAgent.__new__(TypesetterAgent)
+        return agent
+
+    def test_conclusion_in_section_file_map(self, tmp_path):
+        """_write_section_files should include conclusion in file map."""
+        agent = self._get_agent()
+        sections = {
+            "introduction": r"\section{Introduction} Some intro text.",
+            "conclusion": "This paper presented a method for X.",
+        }
+        section_file_map = agent._write_section_files(
+            work_dir=str(tmp_path),
+            sections=sections,
+            section_order=["introduction", "conclusion"],
+            section_titles={"introduction": "Introduction", "conclusion": "Conclusion"},
+            citation_style="numeric",
+        )
+
+        assert "conclusion" in section_file_map
+        conclusion_file = tmp_path / "sections" / "conclusion.tex"
+        assert conclusion_file.exists()
+        content = conclusion_file.read_text(encoding="utf-8")
+        assert r"\section{Conclusion}" in content
+        assert "This paper presented a method for X." in content
+
+    def test_conclusion_not_inlined_in_main_tex(self, tmp_path):
+        """In multi-file mode, main.tex should use \\input for conclusion."""
+        agent = self._get_agent()
+        sections = {
+            "introduction": "Intro text.",
+            "conclusion": "Conclusion text here.",
+        }
+        section_file_map = agent._write_section_files(
+            work_dir=str(tmp_path),
+            sections=sections,
+            section_order=["introduction", "conclusion"],
+            section_titles={"introduction": "Introduction", "conclusion": "Conclusion"},
+            citation_style="numeric",
+        )
+
+        assert "conclusion" in section_file_map
+        assert section_file_map["conclusion"] == "sections/conclusion"

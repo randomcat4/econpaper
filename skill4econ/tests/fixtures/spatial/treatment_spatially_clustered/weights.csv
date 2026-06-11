@@ -1,0 +1,5 @@
+source,target,weight
+A,B,1.0
+B,A,1.0
+C,D,1.0
+D,C,1.0

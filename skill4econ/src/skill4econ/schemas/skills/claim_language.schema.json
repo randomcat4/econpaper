@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skill4econ.local/schemas/skills/claim_language.schema.json",
+  "title": "Claim Language Guard Skill Output",
+  "type": "object",
+  "description": "Schema for claim guard outputs in applied econometrics. Guardrails: claim_gate.json; diagnostic_success; parser-only; interface-only; missing_dependency; official/latest; unsupported fallback estimators are not equivalent substitutes; ESG text risk is not fraud. Robustness checks cannot override failed design or claim gates; strong causal, structural, paper-ready, legal, audit-grade, or backend-certified claims need artifact support.",
+  "additionalProperties": false,
+  "required": ["skill_name", "user_question_summary", "research_domain", "claim_guard_output"],
+  "properties": {
+    "skill_name": {"type": "string", "minLength": 1},
+    "user_question_summary": {"type": "string", "minLength": 1},
+    "research_domain": {"type": "string", "minLength": 1},
+    "research_brief": {"$ref": "#/$defs/research_brief"},
+    "candidate_workflows": {"$ref": "#/$defs/string_array"},
+    "candidate_methods": {"$ref": "#/$defs/string_array"},
+    "required_diagnostics": {"$ref": "#/$defs/diagnostic_array"},
+    "recommended_robustness": {"$ref": "#/$defs/robustness_array"},
+    "forbidden_claims": {
+      "$ref": "#/$defs/claim_array",
+      "description": "Backward-compatible alias; claim_guard_output.forbidden_claims is canonical."
+    },
+    "claim_language": {
+      "$ref": "#/$defs/claim_language",
+      "description": "Backward-compatible alias; claim_guard_output is canonical."
+    },
+    "uncertainty_notes": {"$ref": "#/$defs/string_array"},
+    "next_code_actions": {"$ref": "#/$defs/string_array"},
+    "scholarly_depth": {"$ref": "#/$defs/scholarly_depth"},
+    "not_recommended_methods": {"$ref": "#/$defs/method_array"},
+    "claim_guard_output": {"$ref": "#/$defs/claim_guard_output"}
+  },
+  "$defs": {
+    "claim_guard_output": {
+      "type": "object",
+      "description": "Canonical claim gate result for allowed, downgraded, forbidden, and blocked empirical language.",
+      "additionalProperties": false,
+      "required": ["agent_status", "main_claim_available", "allowed_claims", "forbidden_claims", "blocking_reasons", "safe_summary_paragraph"],
+      "properties": {
+        "agent_status": {"$ref": "#/$defs/agent_status"},
+        "main_claim_available": {
+          "oneOf": [
+            {"type": "boolean"},
+            {"const": "unknown"}
+          ],
+          "description": "Exactly true, false, or the string unknown."
+        },
+        "allowed_claims": {
+          "$ref": "#/$defs/claim_array",
+          "description": "Claims supported by current design, diagnostics, and artifacts."
+        },
+        "downgraded_claims": {
+          "$ref": "#/$defs/claim_array",
+          "description": "Claims that must be weakened, for example from causal to associational."
+        },
+        "forbidden_claims": {
+          "$ref": "#/$defs/claim_array",
+          "description": "Claims that must not be made under the current artifact record."
+        },
+        "blocking_reasons": {
+          "$ref": "#/$defs/blocking_array",
+          "description": "Reasons the main claim is unavailable or requires downgrade."
+        },
+        "safe_summary_paragraph": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Safe paragraph using the strongest supported claim without implying unsupported certification."
+        },
+        "reviewer_warning_paragraph": {"type": "string"}
+      }
+    },
+    "agent_status": {
+      "enum": ["ready", "blocked", "needs_user_input", "missing_dependency", "insufficient_artifacts", "diagnostic_failed", "unknown"],
+      "description": "Operational claim guard status, not legal or backend certification."
+    },
+    "claim_language": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_claims": {"$ref": "#/$defs/claim_array"},
+        "downgraded_claims": {"$ref": "#/$defs/claim_array"},
+        "forbidden_claims": {"$ref": "#/$defs/claim_array"},
+        "safe_summary_paragraph": {"type": "string"},
+        "reviewer_warning_paragraph": {"type": "string"}
+      }
+    },
+    "claim_array": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/claim_item"}
+    },
+    "claim_item": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["claim"],
+          "properties": {
+            "claim": {"type": "string", "minLength": 1},
+            "claim_type": {
+              "enum": ["descriptive", "associational", "predictive", "causal", "structural", "mechanism", "welfare", "policy", "legal", "audit", "backend", "paper_ready", "unknown"]
+            },
+            "status": {"enum": ["allowed", "downgraded", "forbidden", "blocked", "unknown"]},
+            "safe_rewrite": {"type": "string"},
+            "reason": {"type": "string"},
+            "artifact_needed": {"$ref": "#/$defs/string_or_array"},
+            "blocking_reasons": {"$ref": "#/$defs/blocking_array"},
+            "related_diagnostics": {"$ref": "#/$defs/string_array"}
+          }
+        }
+      ]
+    },
+    "blocking_array": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/blocking_reason"}
+    },
+    "blocking_reason": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason"],
+          "properties": {
+            "reason": {"type": "string", "minLength": 1},
+            "severity": {"enum": ["blocking", "major", "moderate", "minor", "unknown"]},
+            "artifact_needed": {"$ref": "#/$defs/string_or_array"},
+            "blocks_claim": {"type": "boolean"}
+          }
+        }
+      ]
+    },
+    "diagnostic_array": {
+      "type": "array",
+      "description": "Diagnostics required before stronger language is permitted.",
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {"$ref": "#/$defs/diagnostic_item"}
+        ]
+      }
+    },
+    "diagnostic_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "status": {"enum": ["not_started", "pending", "passed", "failed", "unknown", "not_applicable", "missing_dependency"]},
+        "artifact_needed": {"$ref": "#/$defs/string_or_array"},
+        "blocks_claim_if_missing": {"type": "boolean"},
+        "diagnostic_success": {"type": "string"}
+      }
+    },
+    "robustness_array": {
+      "type": "array",
+      "description": "Recommended checks; they strengthen credibility but cannot rescue a failed design or claim gate.",
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "reason"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "reason": {"type": "string", "minLength": 1},
+              "artifact_needed": {"$ref": "#/$defs/string_or_array"},
+              "blocks_claim_if_missing": {"type": "boolean"}
+            }
+          }
+        ]
+      }
+    },
+    "research_brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "question": {"type": "string", "minLength": 1},
+        "estimand": {"type": "string"},
+        "identification_strategy": {"type": "string"},
+        "data_context": {"type": "string"},
+        "artifact_status": {"type": "string"},
+        "main_risks": {"$ref": "#/$defs/string_array"}
+      }
+    },
+    "scholarly_depth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {"enum": ["brief", "standard", "paper_ready", "technical_appendix"]},
+        "literature_hooks": {"$ref": "#/$defs/string_array"},
+        "limitations": {"$ref": "#/$defs/string_array"}
+      }
+    },
+    "method_array": {
+      "type": "array",
+      "description": "Methods or shortcuts not recommended for this claim and artifact record.",
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["method", "reason"],
+            "properties": {
+              "method": {"type": "string", "minLength": 1},
+              "reason": {"type": "string", "minLength": 1}
+            }
+          }
+        ]
+      }
+    },
+    "string_array": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "string_or_array": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"$ref": "#/$defs/string_array"}
+      ]
+    }
+  }
+}

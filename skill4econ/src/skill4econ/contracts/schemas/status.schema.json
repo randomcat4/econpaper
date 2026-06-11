@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "skill4econ status.json",
+  "type": "object",
+  "required": [
+    "status",
+    "method_or_workflow",
+    "run_id",
+    "engine",
+    "claim_level",
+    "paper_readiness",
+    "main_claim_available",
+    "risk_codes",
+    "run_dir",
+    "rerun_command"
+  ],
+  "properties": {
+    "status": {
+      "enum": ["success", "success_with_warnings", "partial_success", "skipped", "failed"]
+    },
+    "agent_status": {
+      "enum": [
+        "claimable_success",
+        "success_diagnostic_only",
+        "success_sensitivity_only",
+        "success_adapter_only",
+        "success_not_for_claim",
+        "partial_backend_unavailable",
+        "blocked_missing_dependency",
+        "blocked_interface_only",
+        "blocked_parser_only",
+        "skipped",
+        "failed"
+      ]
+    },
+    "claim_level": {
+      "enum": ["main_estimate", "diagnostic", "sensitivity_only", "adapter_only", "exploratory_only", "failed", "skipped"]
+    },
+    "paper_readiness": {
+      "enum": ["paper_ready", "supplementary_only", "exploratory_only", "not_for_claim", "not_available"]
+    },
+    "main_claim_available": {"type": "boolean"},
+    "risk_codes": {"type": "array", "items": {"type": "string"}}
+  }
+}

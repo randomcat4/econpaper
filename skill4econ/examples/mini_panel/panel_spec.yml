@@ -1,0 +1,8 @@
+data: skill4econ/examples/mini_panel/mini_panel.csv
+id: firm_id
+time: year
+y: y
+x: [x1, x2]
+cluster: firm_id
+fe: [entity, time]
+output_dir: skill4econ/runs

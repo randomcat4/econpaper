@@ -1,0 +1,7 @@
+{
+  "fixture": "weak_pretrend_only_two_pre",
+  "expected_risks": [
+    "WEAK_PRETREND_PERIODS",
+    "FEW_TREATED_COHORTS"
+  ]
+}

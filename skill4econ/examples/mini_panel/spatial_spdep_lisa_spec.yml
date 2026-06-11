@@ -1,0 +1,8 @@
+data: skill4econ/examples/mini_panel/mini_panel.csv
+weights: skill4econ/examples/mini_panel/spatial_weights.csv
+id: firm_id
+time: year
+y: y
+treat: treat
+row_standardize: true
+output_dir: skill4econ/runs

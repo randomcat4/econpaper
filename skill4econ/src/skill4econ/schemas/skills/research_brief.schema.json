@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skill4econ.local/schemas/skills/research_brief.schema.json",
+  "title": "Skill4Econ Research Brief Output",
+  "description": "Constrains research-intake briefs for applied economists. It supports scholarly_depth but does not imply causal proof, structural recovery, legal authority, audit readiness, or backend certification. Use claim_gate.json for claims; diagnostic_success is not paper-ready evidence; parser-only, interface-only, or missing_dependency is not a backend pass; official/latest sources are needed for volatile facts; unsupported fallback estimators are not equivalent substitutes.",
+  "type": "object",
+  "required": ["skill_name", "user_question_summary", "research_domain", "research_brief"],
+  "properties": {
+    "skill_name": {"$ref": "#/$defs/nonempty_string", "description": "Skill or prompt name that produced the brief."},
+    "user_question_summary": {"$ref": "#/$defs/nonempty_string", "description": "Concise summary of the user's question, preserving unresolved empirical choices."},
+    "research_domain": {"$ref": "#/$defs/nonempty_string", "description": "Applied domain, such as environmental economics, climate economics, energy economics, finance economics, or a user-specific domain."},
+    "research_brief": {"$ref": "#/$defs/research_brief"},
+    "candidate_workflows": {"$ref": "#/$defs/named_item_array"},
+    "candidate_methods": {"$ref": "#/$defs/method_array"},
+    "required_diagnostics": {"$ref": "#/$defs/diagnostic_array"},
+    "recommended_robustness": {"$ref": "#/$defs/diagnostic_array"},
+    "scholarly_depth": {"$ref": "#/$defs/scholarly_depth"},
+    "not_recommended_methods": {"$ref": "#/$defs/blocked_method_array"},
+    "claim_language": {"$ref": "#/$defs/claim_language"},
+    "forbidden_claims": {"$ref": "#/$defs/string_array"},
+    "uncertainty_notes": {"$ref": "#/$defs/string_array"},
+    "next_code_actions": {"$ref": "#/$defs/action_array"}
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "research_brief": {
+      "type": "object",
+      "description": "Structured intake brief for units, timing, variables, estimands, design flags, risks, and next files. It is a scoping artifact, not paper-ready evidence.",
+      "required": ["unit_candidates", "time_frequency_candidates", "outcome_candidates", "treatment_or_exposure_candidates", "identification_risks", "candidate_skill_files_next", "required_user_clarifications"],
+      "properties": {
+        "domain": {"$ref": "#/$defs/nonempty_string"},
+        "user_question_rewrite": {"$ref": "#/$defs/nonempty_string", "description": "Cautious rewrite of the research question without unsupported causal, legal, audit-grade, or backend-certified language."},
+        "unit_candidates": {"$ref": "#/$defs/string_array"},
+        "time_frequency_candidates": {"$ref": "#/$defs/string_array"},
+        "outcome_candidates": {"$ref": "#/$defs/string_array"},
+        "treatment_or_exposure_candidates": {"$ref": "#/$defs/string_array"},
+        "estimand_candidates": {"$ref": "#/$defs/string_array"},
+        "likely_design": {"$ref": "#/$defs/likely_design"},
+        "identification_risks": {"$ref": "#/$defs/identification_risk_array"},
+        "candidate_skill_files_next": {"$ref": "#/$defs/string_array"},
+        "required_user_clarifications": {"$ref": "#/$defs/string_array"},
+        "source_needs": {"$ref": "#/$defs/source_need_array"},
+        "data_needs": {"$ref": "#/$defs/named_item_array"}
+      },
+      "additionalProperties": true
+    },
+    "likely_design": {
+      "type": "object",
+      "description": "Early design flags only; these do not certify identification or replace diagnostics.",
+      "properties": {
+        "binary_policy": {"type": "boolean", "description": "Whether the treatment appears to be a binary policy or event indicator."},
+        "staggered_adoption": {"$ref": "#/$defs/true_false_unknown"},
+        "continuous_treatment": {"$ref": "#/$defs/true_false_unknown"},
+        "spatial_spillover_risk": {"$ref": "#/$defs/risk_level"},
+        "measurement_error_risk": {"$ref": "#/$defs/risk_level"}
+      },
+      "additionalProperties": true
+    },
+    "identification_risk_array": {
+      "type": "array",
+      "description": "Threats such as selection, anticipation, spillovers, simultaneity, attrition, weak instruments, or measurement error.",
+      "items": {"$ref": "#/$defs/identification_risk"},
+      "default": []
+    },
+    "identification_risk": {
+      "type": "object",
+      "required": ["risk"],
+      "properties": {
+        "risk": {"$ref": "#/$defs/nonempty_string"},
+        "severity": {"$ref": "#/$defs/risk_level"},
+        "why_it_matters": {"type": "string"},
+        "diagnostic_or_design_response": {"type": "string", "description": "Tentative mitigation or check; it must not be described as sufficient proof by itself."}
+      },
+      "additionalProperties": true
+    },
+    "method_array": {
+      "type": "array",
+      "description": "Candidate methods to consider later; inclusion is not endorsement and does not bypass claim_gate.json.",
+      "items": {"$ref": "#/$defs/method_item"},
+      "default": []
+    },
+    "method_item": {
+      "type": "object",
+      "required": ["method"],
+      "properties": {
+        "method": {"$ref": "#/$defs/nonempty_string"},
+        "reason": {"type": "string"},
+        "required_conditions": {"$ref": "#/$defs/string_array"},
+        "required_diagnostics": {"$ref": "#/$defs/diagnostic_array"}
+      },
+      "additionalProperties": true
+    },
+    "blocked_method_array": {
+      "type": "array",
+      "description": "Methods that are not recommended, premature, or fragile in the present setting.",
+      "items": {"$ref": "#/$defs/blocked_method"},
+      "default": []
+    },
+    "blocked_method": {
+      "type": "object",
+      "required": ["method", "reason"],
+      "properties": {
+        "method": {"$ref": "#/$defs/nonempty_string"},
+        "reason": {"$ref": "#/$defs/nonempty_string"}
+      },
+      "additionalProperties": true
+    },
+    "diagnostic_array": {
+      "type": "array",
+      "description": "Diagnostics that inform design credibility; diagnostic_success alone is not paper-ready evidence.",
+      "items": {"$ref": "#/$defs/diagnostic_item"},
+      "default": []
+    },
+    "diagnostic_item": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonempty_string"},
+        "purpose": {"type": "string"},
+        "caution": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "source_need_array": {
+      "type": "array",
+      "description": "Facts requiring official/latest sources, especially policy, regulation, standard, API, and data-release facts.",
+      "items": {"$ref": "#/$defs/source_need"},
+      "default": []
+    },
+    "source_need": {
+      "type": "object",
+      "required": ["fact_or_source"],
+      "properties": {
+        "fact_or_source": {"$ref": "#/$defs/nonempty_string"},
+        "why_needed": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "action_array": {
+      "type": "array",
+      "description": "Repository or coding actions. parser-only, interface-only, or missing_dependency states must not be labeled as backend passes.",
+      "items": {"$ref": "#/$defs/named_item"},
+      "default": []
+    },
+    "named_item_array": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/named_item"},
+      "default": []
+    },
+    "named_item": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonempty_string"},
+        "rationale": {"type": "string"},
+        "caution": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "claim_language": {
+      "type": "object",
+      "description": "Allowed and avoided wording; strong causal, structural, legal, audit-grade, or backend-certified claims require support and claim_gate.json.",
+      "properties": {
+        "allowed": {"$ref": "#/$defs/string_array"},
+        "avoid": {"$ref": "#/$defs/string_array"},
+        "preferred_tone": {"type": "string", "enum": ["descriptive", "associational", "design-stage causal", "diagnostic-only", "uncertain"]}
+      },
+      "additionalProperties": true
+    },
+    "scholarly_depth": {
+      "type": "string",
+      "enum": ["brief", "standard", "deep", "paper_scoping"],
+      "description": "Depth of research discussion; more depth does not waive diagnostics, official/latest sourcing, or claim_gate.json."
+    },
+    "risk_level": {"type": "string", "enum": ["low", "medium", "high", "unknown"]},
+    "true_false_unknown": {"type": "string", "enum": ["true", "false", "unknown"]},
+    "string_array": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/nonempty_string"},
+      "default": []
+    },
+    "nonempty_string": {"type": "string", "minLength": 1}
+  }
+}

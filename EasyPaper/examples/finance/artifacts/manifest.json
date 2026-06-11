@@ -1,0 +1,19 @@
+{
+  "version": "econ-finance-artifact-manifest/v1",
+  "materials_root": "examples/finance/artifacts",
+  "source_agent": "local_finance_analysis",
+  "figures": [
+    {
+      "id": "fig:bank_lending_main",
+      "title": "Bank Lending Exposure",
+      "path": "figures/bank_lending_main.pdf",
+      "section": "results",
+      "caption": "Relative lending and investment changes for firms exposed to constrained banks.",
+      "semantic_role": "result_figure",
+      "target_type": "data_visualization",
+      "data_hash": "sha256:placeholder",
+      "code_hash": "sha256:placeholder"
+    }
+  ],
+  "tables": []
+}

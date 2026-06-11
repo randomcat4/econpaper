@@ -1,0 +1,5 @@
+data: skill4econ/examples/mini_panel/mini_panel.csv
+y: y
+treat: treat
+x: [x1, x2]
+output_dir: skill4econ/runs

@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skill4econ.local/schemas/skills/method_recommendation.schema.json",
+  "title": "Skill4Econ Method Recommendation Output",
+  "description": "Constrains method-selection rubric outputs for applied economists. It supports scholarly_depth but does not imply estimator success, causal proof, structural recovery, legal authority, audit readiness, or backend certification. Use claim_gate.json for claims; diagnostic_success is not paper-ready evidence; parser-only, interface-only, or missing_dependency is not a backend pass; official/latest sources are needed for volatile facts; unsupported fallback estimators are not equivalent substitutes.",
+  "type": "object",
+  "required": ["skill_name", "user_question_summary", "research_domain", "method_recommendation"],
+  "properties": {
+    "skill_name": {"$ref": "#/$defs/nonempty_string", "description": "Skill or rubric name that produced the recommendation."},
+    "user_question_summary": {"$ref": "#/$defs/nonempty_string", "description": "Concise statement of the user's question and empirical target, preserving unresolved assumptions."},
+    "research_domain": {"$ref": "#/$defs/nonempty_string", "description": "Applied domain, such as environmental economics, climate economics, energy economics, finance economics, or a user-specific domain."},
+    "research_brief": {"$ref": "#/$defs/research_brief_summary"},
+    "method_recommendation": {"$ref": "#/$defs/method_recommendation"},
+    "candidate_methods": {"$ref": "#/$defs/method_array"},
+    "required_diagnostics": {"$ref": "#/$defs/diagnostic_array"},
+    "recommended_robustness": {"$ref": "#/$defs/diagnostic_array"},
+    "scholarly_depth": {"$ref": "#/$defs/scholarly_depth"},
+    "not_recommended_methods": {"$ref": "#/$defs/blocked_method_array"},
+    "claim_language": {"$ref": "#/$defs/claim_language"},
+    "forbidden_claims": {"$ref": "#/$defs/string_array"},
+    "uncertainty_notes": {"$ref": "#/$defs/string_array"},
+    "next_code_actions": {"$ref": "#/$defs/spec_draft_array"}
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "method_recommendation": {
+      "type": "object",
+      "description": "Recommendation bundle that separates candidate estimators, diagnostic-only procedures, blocked methods, required diagnostics, and next spec drafts without bypassing claim_gate.json.",
+      "required": ["primary_candidates", "secondary_candidates", "diagnostic_only", "blocked_methods", "required_diagnostics", "next_spec_drafts"],
+      "properties": {
+        "primary_candidates": {"$ref": "#/$defs/method_array"},
+        "secondary_candidates": {"$ref": "#/$defs/method_array"},
+        "diagnostic_only": {"$ref": "#/$defs/diagnostic_only_array"},
+        "blocked_methods": {"$ref": "#/$defs/blocked_method_array"},
+        "required_diagnostics": {"$ref": "#/$defs/diagnostic_array"},
+        "next_spec_drafts": {"$ref": "#/$defs/spec_draft_array"},
+        "claim_language": {"$ref": "#/$defs/claim_language"},
+        "forbidden_claims": {"$ref": "#/$defs/string_array"},
+        "uncertainty_notes": {"$ref": "#/$defs/string_array"}
+      },
+      "additionalProperties": true
+    },
+    "method_array": {
+      "type": "array",
+      "description": "Candidate methods conditional on data structure, assumptions, diagnostics, and claim gating; inclusion is not endorsement.",
+      "items": {"$ref": "#/$defs/method_candidate"},
+      "default": []
+    },
+    "method_candidate": {
+      "type": "object",
+      "description": "Candidate empirical method with conditions needed before interpretation; unsupported fallback estimators are not equivalent substitutes.",
+      "required": ["method", "reason", "required_conditions", "required_diagnostics"],
+      "properties": {
+        "method": {"$ref": "#/$defs/nonempty_string"},
+        "reason": {"$ref": "#/$defs/nonempty_string"},
+        "required_conditions": {
+          "type": "array",
+          "description": "Assumptions, data requirements, timing requirements, and implementation requirements that must hold before stronger interpretation.",
+          "items": {"$ref": "#/$defs/nonempty_string"},
+          "default": []
+        },
+        "required_diagnostics": {"$ref": "#/$defs/diagnostic_array"},
+        "estimand": {"type": "string"},
+        "data_requirements": {"$ref": "#/$defs/string_array"},
+        "main_limitations": {"$ref": "#/$defs/string_array"},
+        "claim_status": {"$ref": "#/$defs/claim_status"}
+      },
+      "additionalProperties": true
+    },
+    "diagnostic_only_array": {
+      "type": "array",
+      "description": "Diagnostics, balance checks, falsification checks, data-quality checks, or sensitivity analyses; diagnostic_only must distinguish diagnostics from claim-ready methods.",
+      "items": {"$ref": "#/$defs/diagnostic_only_item"},
+      "default": []
+    },
+    "diagnostic_only_item": {
+      "type": "object",
+      "required": ["diagnostic", "purpose", "not_claim_ready_reason"],
+      "properties": {
+        "diagnostic": {"$ref": "#/$defs/nonempty_string"},
+        "purpose": {"$ref": "#/$defs/nonempty_string"},
+        "not_claim_ready_reason": {
+          "$ref": "#/$defs/nonempty_string",
+          "description": "Why diagnostic_success alone is not sufficient for causal, structural, audit-grade, legal, or paper-ready claims."
+        },
+        "related_methods": {"$ref": "#/$defs/string_array"}
+      },
+      "additionalProperties": true
+    },
+    "blocked_method_array": {
+      "type": "array",
+      "description": "Methods that should be blocked, deferred, or explicitly not recommended in the current setting.",
+      "items": {"$ref": "#/$defs/blocked_method"},
+      "default": []
+    },
+    "blocked_method": {
+      "type": "object",
+      "required": ["method", "blocked_reason"],
+      "properties": {
+        "method": {"$ref": "#/$defs/nonempty_string"},
+        "blocked_reason": {
+          "$ref": "#/$defs/nonempty_string",
+          "description": "Econometric or implementation reason this method is not recommended, equivalent, or claim-ready."
+        },
+        "could_be_reconsidered_if": {"$ref": "#/$defs/string_array"},
+        "forbidden_substitute_claim": {
+          "type": "string",
+          "description": "Optional guardrail text; unsupported fallback estimators are not equivalent substitutes."
+        }
+      },
+      "additionalProperties": true
+    },
+    "diagnostic_array": {
+      "type": "array",
+      "description": "Diagnostics required before interpretation; they do not replace identification assumptions or claim_gate.json.",
+      "items": {"$ref": "#/$defs/diagnostic_item"},
+      "default": []
+    },
+    "diagnostic_item": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonempty_string"},
+        "purpose": {"type": "string"},
+        "failure_implication": {"type": "string"},
+        "success_caution": {"type": "string", "description": "Reminder that diagnostic_success is not paper-ready evidence by itself."}
+      },
+      "additionalProperties": true
+    },
+    "spec_draft_array": {
+      "type": "array",
+      "description": "Follow-up spec files or actions; next_spec_drafts names follow-up spec files/actions and does not mean they have run or passed.",
+      "items": {"$ref": "#/$defs/spec_draft"},
+      "default": []
+    },
+    "spec_draft": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonempty_string"},
+        "purpose": {"type": "string"},
+        "depends_on": {"$ref": "#/$defs/string_array"},
+        "claim_gate_needed": {"type": "boolean", "description": "Whether later claims from this draft must pass claim_gate.json."},
+        "execution_status": {
+          "type": "string",
+          "enum": ["not_run", "parser-only", "interface-only", "missing_dependency", "ran_with_diagnostics"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "research_brief_summary": {
+      "type": "object",
+      "description": "Optional upstream brief summary used for method selection; it is not validated data or certified identification.",
+      "properties": {
+        "unit_candidates": {"$ref": "#/$defs/string_array"},
+        "time_frequency_candidates": {"$ref": "#/$defs/string_array"},
+        "outcome_candidates": {"$ref": "#/$defs/string_array"},
+        "treatment_or_exposure_candidates": {"$ref": "#/$defs/string_array"},
+        "identification_risks": {"$ref": "#/$defs/string_array"},
+        "required_user_clarifications": {"$ref": "#/$defs/string_array"}
+      },
+      "additionalProperties": true
+    },
+    "claim_language": {
+      "type": "object",
+      "description": "Allowed and avoided wording; strong causal, structural, legal, audit-grade, backend-certified, or paper-ready claims require evidence and claim_gate.json.",
+      "properties": {
+        "allowed": {"$ref": "#/$defs/string_array"},
+        "avoid": {"$ref": "#/$defs/string_array"},
+        "preferred_tone": {"type": "string", "enum": ["descriptive", "associational", "design-stage causal", "diagnostic-only", "uncertain"]}
+      },
+      "additionalProperties": true
+    },
+    "claim_status": {
+      "type": "string",
+      "description": "Current evidentiary status of the recommendation.",
+      "enum": ["screening", "specification_candidate", "diagnostic_only", "blocked", "requires_claim_gate"]
+    },
+    "scholarly_depth": {
+      "type": "string",
+      "enum": ["brief", "standard", "deep", "paper_scoping"],
+      "description": "Depth of methodological discussion; more depth does not waive diagnostics, official/latest sourcing, or claim_gate.json."
+    },
+    "string_array": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/nonempty_string"},
+      "default": []
+    },
+    "nonempty_string": {"type": "string", "minLength": 1}
+  }
+}

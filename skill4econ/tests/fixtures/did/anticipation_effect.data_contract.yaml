@@ -1,0 +1,13 @@
+panel:
+  unit_id: unit
+  time_id: year
+  outcome: y
+  treatment: treat
+  first_treat_year: gvar
+  covariates:
+    - x1
+policy:
+  name: anticipation_effect
+  level: unit
+  treatment_coding: staggered_adoption
+  anticipation_periods: 1

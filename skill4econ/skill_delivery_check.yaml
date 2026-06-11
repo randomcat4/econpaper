@@ -1,0 +1,17 @@
+skill_delivery_check:
+  shared_files_complete: true
+  intake_files_complete: true
+  domain_files_complete: true
+  reporting_files_complete: true
+  schemas_complete: true
+  all_skills_have_forbidden_claims: true
+  all_skills_have_output_schema: true
+  all_skills_reference_claim_gate: true
+  unsupported_capabilities_not_overclaimed: true
+  current_regulatory_facts_not_hardcoded: true
+  ready_for_codex_to_add_files: true
+notes:
+  - "Generated under econskill/skill."
+  - "Skills are prompt/rubric documents, not estimators or backend validators."
+  - "Missing claim_gate.json must be treated as blocked or unknown claim readiness."
+  - "The repository .gitignore currently ignores paths containing skills/, so use git add -f if these files should be tracked."

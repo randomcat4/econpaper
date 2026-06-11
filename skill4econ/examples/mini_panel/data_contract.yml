@@ -1,0 +1,19 @@
+panel:
+  unit_id: firm_id
+  time_id: year
+  outcome: y
+  treatment: treat
+  first_treat_year: gvar
+  covariates:
+    - x1
+    - x2
+  fixed_effects:
+    - unit
+    - time
+  cluster:
+    - firm_id
+policy:
+  name: smoke_policy
+  level: firm
+  treatment_coding: simple_2x2
+  anticipation_periods: 0

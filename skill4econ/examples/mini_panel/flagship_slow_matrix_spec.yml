@@ -1,0 +1,5 @@
+output_dir: skill4econ/runs
+backend_profiles: [stata, r]
+timeout_seconds: 420
+r_probe_timeout: 30
+strict_validation: false

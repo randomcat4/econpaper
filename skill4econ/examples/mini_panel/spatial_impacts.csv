@@ -1,0 +1,2 @@
+model,effect,direct,indirect,total,std_error,p_value
+SDM,treat,0.8,0.25,1.05,0.2,0.01

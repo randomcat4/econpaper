@@ -1,0 +1,12 @@
+panel:
+  unit_id: unit
+  time_id: year
+  outcome: y
+  treatment: treat
+  covariates:
+    - x1
+policy:
+  name: two_by_two_clean
+  level: unit
+  treatment_coding: simple_2x2
+  anticipation_periods: 0

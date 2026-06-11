@@ -1,0 +1,12 @@
+data: skill4econ/examples/mini_panel/staggered_panel.csv
+design_type: staggered_adoption_did
+id: firm_id
+time: year
+y: y
+gvar: gvar
+x: [x1, x2]
+cluster: firm_id
+engine_policy: stata_first
+event_window: [-2, 2]
+base_period: -1
+output_dir: skill4econ/runs

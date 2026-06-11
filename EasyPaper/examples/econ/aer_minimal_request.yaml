@@ -1,0 +1,12 @@
+title: "Minimum Wage Pass-Through and Local Employment"
+venue: "american-economic-review"
+abstract_hint: "Study how minimum wage changes affect prices and employment using county-level panel data."
+idea_hypothesis: "Minimum wage increases are partially passed through to consumer prices, with limited short-run employment effects."
+data: "County-year panel data combining minimum wage changes, employment outcomes, prices, and demographic controls."
+empirical_strategy: "Difference-in-differences design comparing counties exposed to state minimum wage increases with counties in states without changes, including county and year fixed effects."
+results: "Baseline estimates show positive price pass-through and small, statistically imprecise employment effects."
+robustness: "Robustness checks include alternative control groups, county-specific trends, excluding border counties, and placebo policy dates."
+references: []
+figures_manifest: "examples/econ/artifacts/manifest.json"
+target_pages: 20
+compile_pdf: false

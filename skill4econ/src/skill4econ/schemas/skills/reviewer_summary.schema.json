@@ -1,0 +1,504 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skill4econ.local/schemas/skills/reviewer_summary.schema.json",
+  "title": "Skill4Econ Reviewer Summary Output",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "skill_name",
+    "user_question_summary",
+    "research_domain",
+    "reviewer_summary",
+    "yaml_summary",
+    "markdown_summary"
+  ],
+  "properties": {
+    "skill_name": {
+      "$ref": "#/$defs/str"
+    },
+    "user_question_summary": {
+      "$ref": "#/$defs/str"
+    },
+    "research_domain": {
+      "$ref": "#/$defs/str"
+    },
+    "yaml_summary": {
+      "$ref": "#/$defs/str"
+    },
+    "markdown_summary": {
+      "$ref": "#/$defs/str"
+    },
+    "research_brief": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "unit": {
+          "$ref": "#/$defs/str"
+        },
+        "time_frequency": {
+          "$ref": "#/$defs/str"
+        },
+        "outcome_candidates": {
+          "$ref": "#/$defs/strArray"
+        },
+        "treatment_or_exposure": {
+          "$ref": "#/$defs/str"
+        },
+        "estimand_candidates": {
+          "$ref": "#/$defs/strArray"
+        },
+        "identification_risks": {
+          "$ref": "#/$defs/riskArray"
+        }
+      }
+    },
+    "candidate_workflows": {
+      "$ref": "#/$defs/objArray"
+    },
+    "candidate_methods": {
+      "$ref": "#/$defs/objArray"
+    },
+    "required_diagnostics": {
+      "$ref": "#/$defs/objArray"
+    },
+    "recommended_robustness": {
+      "$ref": "#/$defs/objArray"
+    },
+    "forbidden_claims": {
+      "type": "array",
+      "description": "Red lines: claim_gate.json; diagnostic_success; parser-only; missing_dependency; unsupported fallback estimators; ESG text risk is not fraud; reduced-form spatial exposure is not structural SDM/SAR impact.",
+      "items": {
+        "$ref": "#/$defs/claimBlock"
+      }
+    },
+    "claim_language": {
+      "$ref": "#/$defs/objArray"
+    },
+    "uncertainty_notes": {
+      "$ref": "#/$defs/objArray"
+    },
+    "next_code_actions": {
+      "$ref": "#/$defs/objArray"
+    },
+    "not_recommended_methods": {
+      "$ref": "#/$defs/objArray"
+    },
+    "scholarly_depth": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "estimand_definition": {
+          "$ref": "#/$defs/str"
+        },
+        "identification_assumptions": {
+          "$ref": "#/$defs/strArray"
+        },
+        "measurement_model": {
+          "$ref": "#/$defs/str"
+        },
+        "data_construction_risks": {
+          "$ref": "#/$defs/riskArray"
+        },
+        "method_decision_tree": {
+          "$ref": "#/$defs/objArray"
+        },
+        "diagnostics_that_block_claims": {
+          "$ref": "#/$defs/objArray"
+        },
+        "robustness_ranked_by_risk": {
+          "$ref": "#/$defs/objArray"
+        },
+        "referee_objections": {
+          "$ref": "#/$defs/reviewerRiskArray"
+        },
+        "downgrade_triggers": {
+          "$ref": "#/$defs/objArray"
+        }
+      }
+    },
+    "reviewer_summary": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "readiness",
+        "strongest_supported_claim",
+        "top_reviewer_objections",
+        "must_fix_before_submission",
+        "optional_improvements",
+        "research_question",
+        "data_construction",
+        "treatment_or_exposure_design",
+        "identification_strategy",
+        "estimator_and_backend",
+        "diagnostics",
+        "robustness_and_sensitivity",
+        "claim_gate",
+        "main_limitations",
+        "required_fixes_before_paper_use",
+        "artifact_files_inspected",
+        "missing_artifacts",
+        "claim_gate_status",
+        "claim_gate_evidence",
+        "downgraded_claims",
+        "reviewer_risks"
+      ],
+      "properties": {
+        "readiness": {
+          "type": "string",
+          "enum": [
+            "paper_ready",
+            "supplementary_only",
+            "diagnostic_only",
+            "blocked",
+            "unknown"
+          ]
+        },
+        "strongest_supported_claim": {
+          "$ref": "#/$defs/claim"
+        },
+        "top_reviewer_objections": {
+          "$ref": "#/$defs/reviewerRiskArray"
+        },
+        "must_fix_before_submission": {
+          "$ref": "#/$defs/fixArray"
+        },
+        "optional_improvements": {
+          "$ref": "#/$defs/fixArray"
+        },
+        "research_question": {
+          "$ref": "#/$defs/section"
+        },
+        "data_construction": {
+          "$ref": "#/$defs/section"
+        },
+        "treatment_or_exposure_design": {
+          "$ref": "#/$defs/section"
+        },
+        "identification_strategy": {
+          "$ref": "#/$defs/section"
+        },
+        "estimator_and_backend": {
+          "$ref": "#/$defs/section"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/section"
+        },
+        "robustness_and_sensitivity": {
+          "$ref": "#/$defs/section"
+        },
+        "claim_gate": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "status",
+            "evidence",
+            "claim_gate_file",
+            "can_support_paper_ready",
+            "downgrade_reason_if_any"
+          ],
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/gateStatus"
+            },
+            "evidence": {
+              "$ref": "#/$defs/evidenceArray"
+            },
+            "claim_gate_file": {
+              "$ref": "#/$defs/str"
+            },
+            "can_support_paper_ready": {
+              "type": "boolean"
+            },
+            "downgrade_reason_if_any": {
+              "$ref": "#/$defs/str"
+            }
+          }
+        },
+        "main_limitations": {
+          "$ref": "#/$defs/objArray"
+        },
+        "required_fixes_before_paper_use": {
+          "$ref": "#/$defs/fixArray"
+        },
+        "artifact_files_inspected": {
+          "$ref": "#/$defs/strArray"
+        },
+        "missing_artifacts": {
+          "$ref": "#/$defs/strArray"
+        },
+        "claim_gate_status": {
+          "$ref": "#/$defs/gateStatus"
+        },
+        "claim_gate_evidence": {
+          "$ref": "#/$defs/evidenceArray"
+        },
+        "downgraded_claims": {
+          "$ref": "#/$defs/objArray"
+        },
+        "reviewer_risks": {
+          "$ref": "#/$defs/reviewerRiskArray"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "readiness": {
+                "const": "paper_ready"
+              }
+            },
+            "required": [
+              "readiness"
+            ]
+          },
+          "then": {
+            "properties": {
+              "claim_gate_status": {
+                "const": "passed"
+              },
+              "artifact_files_inspected": {
+                "contains": {
+                  "const": "claim_gate.json"
+                }
+              },
+              "missing_artifacts": {
+                "not": {
+                  "contains": {
+                    "const": "claim_gate.json"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "missing_artifacts": {
+                "contains": {
+                  "const": "claim_gate.json"
+                }
+              }
+            },
+            "required": [
+              "missing_artifacts"
+            ]
+          },
+          "then": {
+            "properties": {
+              "readiness": {
+                "not": {
+                  "const": "paper_ready"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "str": {
+      "type": "string",
+      "minLength": 1
+    },
+    "strArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "objArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/looseObj"
+      }
+    },
+    "riskArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/risk"
+      }
+    },
+    "fixArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fix"
+      }
+    },
+    "evidenceArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "reviewerRiskArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reviewerRisk"
+      }
+    },
+    "gateStatus": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "missing",
+        "partial",
+        "not_applicable",
+        "unknown"
+      ]
+    },
+    "looseObj": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "risk",
+        "why_it_matters"
+      ],
+      "properties": {
+        "risk": {
+          "$ref": "#/$defs/str"
+        },
+        "why_it_matters": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "reviewerRisk": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "risk",
+        "severity",
+        "evidence_needed_or_missing",
+        "fix"
+      ],
+      "properties": {
+        "risk": {
+          "$ref": "#/$defs/str"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "major",
+            "moderate",
+            "minor",
+            "unknown"
+          ]
+        },
+        "evidence_needed_or_missing": {
+          "$ref": "#/$defs/str"
+        },
+        "fix": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "summary",
+        "evidence",
+        "reviewer_assessment"
+      ],
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/str"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidenceArray"
+        },
+        "reviewer_assessment": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "claim",
+        "support_level",
+        "allowed_language",
+        "not_allowed_language"
+      ],
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/str"
+        },
+        "support_level": {
+          "$ref": "#/$defs/str"
+        },
+        "allowed_language": {
+          "$ref": "#/$defs/str"
+        },
+        "not_allowed_language": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "artifact",
+        "finding",
+        "supports"
+      ],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/str"
+        },
+        "finding": {
+          "$ref": "#/$defs/str"
+        },
+        "supports": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "fix": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "fix",
+        "reason",
+        "priority"
+      ],
+      "properties": {
+        "fix": {
+          "$ref": "#/$defs/str"
+        },
+        "reason": {
+          "$ref": "#/$defs/str"
+        },
+        "priority": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "claimBlock": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "claim",
+        "reason"
+      ],
+      "properties": {
+        "claim": {
+          "$ref": "#/$defs/str"
+        },
+        "reason": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    }
+  }
+}

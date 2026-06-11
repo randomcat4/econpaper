@@ -1,0 +1,6 @@
+{
+  "fixture": "trim_sensitivity_unstable",
+  "expected_risks": [
+    "TRIM_SENSITIVITY_UNSTABLE"
+  ]
+}

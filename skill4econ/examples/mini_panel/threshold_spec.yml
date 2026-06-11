@@ -1,0 +1,9 @@
+data: skill4econ/examples/mini_panel/mini_panel.csv
+id: firm_id
+time: year
+y: y
+x: [x1]
+threshold: x2
+trim: 0.15
+grid_size: 8
+output_dir: skill4econ/runs

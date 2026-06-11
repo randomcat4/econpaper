@@ -1,0 +1,12 @@
+output_dir: skill4econ/runs
+run_spxtregress: true
+run_ppmlhdfe: false
+cert_units: 12
+cert_years: 4
+spxtregress_panel_effect: fe
+spxtregress_iterate: 80
+spxtregress_timeout: 180
+spatial_models: [SDM]
+w_grid:
+  - name: W_row
+    options: normalize(row)

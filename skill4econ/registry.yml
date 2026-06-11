@@ -1,0 +1,143 @@
+version: 0.1.0
+purpose: repo-local callable econometrics backends for EvoScientist agents
+policy:
+  no_fake_results: true
+  no_auto_install: true
+  require_manifest: true
+  require_audit: true
+  states: [plan, dry-run, audit, run]
+local_backends:
+  stata:
+    discovery:
+      - spec.stata.executable
+      - env SKILL4ECON_STATA
+      - user config ~/.skill4econ/config.toml
+      - PATH lookup (stata, stata-mp, StataMP-64, ...)
+      - "common install dirs (Win: <drive>:\\stata*, Program Files\\Stata*; POSIX: /usr/local/stata*, /opt/stata*, /Applications/Stata*)"
+    preferred_batch_mode_windows: ["/e", "do"]
+    preferred_batch_mode_posix: ["-b", "do"]
+  python:
+    preferred: conda run -n base python
+    known_available:
+      - pandas
+      - numpy
+      - scipy
+      - sklearn
+      - linearmodels
+      - xgboost
+      - matplotlib
+      - seaborn
+    known_partial:
+      statsmodels: top-level package imports, but statsmodels.api fails in current base environment; wrappers use numpy fallback
+    known_missing:
+      - econml
+      - dowhy
+      - doubleml
+      - causalml
+      - lightgbm
+      - pyreadstat
+  dea_sbm_malmquist:
+    backend: vendored
+    module: skill4econ.backends.dea
+    status: self_contained
+    override:
+      - spec.dea.backend_path
+      - env SKILL4ECON_DEA_BACKEND
+      - user config ~/.skill4econ/config.toml
+vendor_sources:
+  rdrobust: vendor_sources/rdrobust
+  stpackages_csdid_drdid: vendor_sources/stpackages
+  did_imputation: vendor_sources/did_imputation
+  reghdfe: vendor_sources/reghdfe
+  ftools: vendor_sources/ftools
+  ivreghdfe: vendor_sources/ivreghdfe
+  ppmlhdfe: vendor_sources/ppmlhdfe
+  csdid_python: vendor_sources/csdid-python
+  linearmodels: vendor_sources/linearmodels
+methods:
+  p0_python:
+    - py_preflight
+    - data_audit
+    - ols_cluster
+    - panel_fe_re
+    - did_twfe_event
+    - did_event_study
+    - spatial_did_reduced_form
+    - spatial_did
+    - iv_2sls
+    - dml_plr_crossfit
+    - dml_irm_crossfit
+    - doubleml_adapter
+    - econml_adapter
+    - rdd_local_linear
+    - quantile_regression
+    - threshold_panel
+    - mediation_moderation
+    - synthetic_control
+    - psm_ipw_match
+    - ml_prediction_audit
+    - plot_diagnostics
+    - dea_sbm_malmquist_adapter
+  p0_stata:
+    - stata_preflight
+    - data_audit
+    - ols_cluster
+    - reghdfe_fe
+    - panel_fe_re
+    - did_twfe_event
+    - did_event_study
+    - csdid_staggered
+    - dr_did_2x2
+    - cs_did_attgt
+    - did_imputation_event
+    - iv_2sls
+    - rdrobust_rdd
+    - quantile_regression
+    - poisson_ppml_fe
+    - teffects_psm_ipw
+    - dynamic_panel_gmm
+    - spatial_panel_preflight
+    - export_log_manifest
+  p1_interfaces:
+    - spatial_did
+    - dynamic_spatial_durbin
+    - psm_did
+    - green_innovation_network_spillover
+    - sfa_external_adapter
+    - dea_external_adapter
+    - malmquist_external_adapter
+  p2_interfaces:
+    - dowhy_adapter
+    - causalml_adapter
+    - lightgbm_finance
+    - patent_text_pipeline
+    - remote_sensing_pipeline
+workflows:
+  p0:
+    - did_paper_run
+  modern_did_core:
+    primary_menu:
+      - dr_did_2x2
+      - cs_did_attgt
+      - did_imputation_event
+    routing:
+      simple_2x2: dr_did_2x2
+      staggered_absorbing_primary: cs_did_attgt
+      staggered_event_study_or_robustness: did_imputation_event
+    policy:
+      no_psm_did_as_primary: true
+      no_twfe_primary_for_staggered: true
+      no_fallback_substitution: true
+  statuses:
+    - success
+    - degraded
+    - not_paper_ready
+    - failed
+  did_paper_run:
+    design_types:
+      - simple_2x2_did
+      - staggered_adoption_did
+    policy:
+      no_twfe_only_success_for_staggered: true
+      no_empty_robustness_summary: true
+      no_causal_overclaim: true

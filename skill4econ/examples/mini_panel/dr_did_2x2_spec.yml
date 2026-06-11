@@ -1,0 +1,11 @@
+data: skill4econ/examples/mini_panel/mini_panel.csv
+id: firm_id
+time: year
+y: y
+x: [x1, x2]
+treatment: treat
+cluster: firm_id
+method: drimp
+data_type: panel
+sample_if: inlist(year, 2018, 2019)
+output_dir: skill4econ/runs

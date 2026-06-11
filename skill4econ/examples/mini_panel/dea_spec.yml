@@ -1,0 +1,10 @@
+data: skill4econ/examples/mini_panel/dea_t1.xlsx
+output_dir: skill4econ/runs
+dea:
+  dmus: 3
+  periods: 2
+  nx: 2
+  ny: 2
+  nb: 1
+  undesirable: 1
+  sup: 0

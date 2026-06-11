@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "copied_at": "2026-06-06",
+  "source": {
+    "dea_calculator_py": {
+      "path": "D:/myproject/dea_calculator/dea_calculator.py",
+      "sha256": "3E325141929EA074D9E73B3B996DB54486413D129D2166E505DE112E55C73FE2"
+    },
+    "readme_md": {
+      "path": "D:/myproject/dea_calculator/README.md",
+      "sha256": "3C8027BB7CB27D86ACD5743F675217C08C073E60943A521AF4C06FAE1543FDD8"
+    }
+  },
+  "vendored_copy": {
+    "dea_calculator_py": {
+      "path": "skill4econ/backends/dea/original/dea_calculator.py",
+      "sha256": "3E325141929EA074D9E73B3B996DB54486413D129D2166E505DE112E55C73FE2"
+    },
+    "readme_md": {
+      "path": "skill4econ/backends/dea/original/README.md",
+      "sha256": "3C8027BB7CB27D86ACD5743F675217C08C073E60943A521AF4C06FAE1543FDD8"
+    }
+  },
+  "ported_runtime": {
+    "solver_py": {
+      "path": "skill4econ/backends/dea/solver.py",
+      "sha256_before_this_source_record": "7D4E6D9BC32F1FA16B961C2A6A53AC15F49937DF0B4B3DAE40FB9A333DAEB8B3"
+    },
+    "engine_py": {
+      "path": "skill4econ/backends/dea/engine.py",
+      "sha256_before_this_source_record": "4A96BB29566BE81D8BD2D4A6A26A6853DBCBE6ADDF6EB04C123F0F66899A7CEC"
+    }
+  },
+  "notes": [
+    "original/dea_calculator.py is preserved as a provenance snapshot.",
+    "solver.py ports the user-authored SBM/Super-SBM kernels for in-process calls.",
+    "engine.py replaces script-level globals and fixed t1.xlsx/allindex.xlsx paths with explicit inputs and outputs."
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "lock_status": "unlocked_source_reference_only",
+  "generated_at": "2026-06-06",
+  "policy": {
+    "ordinary_agent_calls": "Use dependency-gated adapters and existing certification artifacts; do not install heavy dependencies automatically.",
+    "live_certification": "Run only when explicitly requested with enough timeout.",
+    "reproducible_locking": "Entries without commits are source references, not reproducible pins."
+  },
+  "known_gap": {
+    "id": "vendor_sources_not_commit_pinned",
+    "severity": "medium",
+    "message": "Existing vendor source references list repository URLs but do not yet pin commits or release tags.",
+    "action": "Before publication-grade live certification, replace null commits with exact commit SHAs or package versions."
+  },
+  "entries": {
+    "rdrobust": {
+      "repo_url": "https://github.com/rdpackages/rdrobust",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "stpackages": {
+      "repo_url": "https://github.com/friosavila/stpackages",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "reghdfe": {
+      "repo_url": "https://github.com/sergiocorreia/reghdfe",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "ftools": {
+      "repo_url": "https://github.com/sergiocorreia/ftools",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "ivreghdfe": {
+      "repo_url": "https://github.com/sergiocorreia/ivreghdfe",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "ppmlhdfe": {
+      "repo_url": "https://github.com/sergiocorreia/ppmlhdfe",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "stata-require": {
+      "repo_url": "https://github.com/sergiocorreia/stata-require",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "csdid-python": {
+      "repo_url": "https://github.com/d2cml-ai/csdid",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "did_imputation": {
+      "repo_url": "https://github.com/borusyak/did_imputation",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "linearmodels": {
+      "repo_url": "https://github.com/bashtage/linearmodels",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "DoubleML": {
+      "repo_url": "https://github.com/DoubleML/doubleml-for-py",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "EconML": {
+      "repo_url": "https://github.com/py-why/EconML",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    },
+    "spreg": {
+      "repo_url": "https://github.com/pysal/spreg",
+      "commit": null,
+      "lock_status": "unlocked_source_reference_only"
+    }
+  }
+}

@@ -1,0 +1,74 @@
+did:
+  twfe:
+    backend: python_or_stata_twfe
+    role: benchmark
+    allowed_designs: ["two_by_two", "single_timing", "staggered_adoption"]
+    main_allowed: false
+    engines: ["python", "stata"]
+    python_method: did_twfe_event
+    stata_method: did_twfe_event
+
+  event_study_twfe:
+    backend: python_or_stata_twfe
+    role: dynamic_benchmark
+    allowed_designs: ["single_timing", "staggered_adoption"]
+    main_allowed: false
+    engines: ["python", "stata"]
+    python_method: did_event_study
+    stata_method: did_event_study
+
+  drdid:
+    backend: stata_drdid
+    role: covariate_adjusted_main
+    allowed_designs: ["two_by_two", "single_timing", "repeated_cross_section"]
+    main_allowed: true
+    engines: ["stata"]
+    stata_method: dr_did_2x2
+
+  cs_did_attgt:
+    backend: stata_csdid
+    role: main_if_staggered
+    allowed_designs: ["staggered_adoption"]
+    main_allowed: true
+    engines: ["stata"]
+    stata_method: cs_did_attgt
+
+  csdid:
+    backend: stata_csdid
+    role: legacy_staggered_check
+    allowed_designs: ["staggered_adoption"]
+    main_allowed: true
+    engines: ["stata"]
+    stata_method: csdid_staggered
+
+  did_imputation:
+    backend: stata_bjs
+    role: robustness
+    allowed_designs: ["single_timing", "staggered_adoption"]
+    main_allowed: true
+    engines: ["stata"]
+    stata_method: did_imputation_event
+
+  did_r_att_gt:
+    backend: r_did
+    role: main_if_staggered
+    allowed_designs: ["staggered_adoption"]
+    main_allowed: true
+    engines: ["r"]
+    r_package: did
+
+  eventstudyinteract:
+    backend: stata_eventstudyinteract
+    role: dynamic_effect
+    allowed_designs: ["staggered_adoption"]
+    main_allowed: true
+    engines: ["stata"]
+    stata_command: eventstudyinteract
+
+  honestdid:
+    backend: r_or_stata_honestdid
+    role: sensitivity
+    allowed_designs: ["single_timing", "staggered_adoption"]
+    main_allowed: false
+    engines: ["r", "stata"]
+    r_package: HonestDiD

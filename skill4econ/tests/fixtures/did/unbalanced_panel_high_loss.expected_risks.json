@@ -1,0 +1,6 @@
+{
+  "fixture": "unbalanced_panel_high_loss",
+  "expected_risks": [
+    "UNBALANCED_PANEL_HIGH_LOSS"
+  ]
+}

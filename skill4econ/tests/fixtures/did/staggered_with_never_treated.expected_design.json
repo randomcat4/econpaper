@@ -1,0 +1,11 @@
+{
+  "fixture": "staggered_with_never_treated",
+  "spec": {
+    "id": "unit",
+    "time": "year",
+    "y": "y",
+    "treat": "treat",
+    "gvar": "gvar"
+  },
+  "expected_design_type": "staggered_adoption"
+}

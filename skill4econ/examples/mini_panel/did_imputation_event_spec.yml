@@ -1,0 +1,12 @@
+data: skill4econ/examples/mini_panel/staggered_panel.csv
+id: firm_id
+time: year
+y: y
+x: []
+gvar: gvar
+cluster: firm_id
+horizons: 0/2
+pretrends: 2
+autosample: true
+saveweights: true
+output_dir: skill4econ/runs

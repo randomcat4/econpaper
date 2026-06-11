@@ -1,0 +1,10 @@
+{
+  "method": "spatial_exposure_did",
+  "id": "city",
+  "time": "year",
+  "y": "y",
+  "treat": "treat",
+  "weights": "weights.csv",
+  "near_exposure_threshold": 0,
+  "run_event_study": false
+}

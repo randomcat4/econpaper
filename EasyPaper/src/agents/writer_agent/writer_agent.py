@@ -1,0 +1,1122 @@
+"""
+Writer Agent
+- **Description**:
+    - Generates pure LaTeX content fragments for paper sections
+    - Focuses on academic writing quality and proper citation usage
+    - Supports iterative review and refinement with tool-based validation
+    - Dual-mode tool invocation:
+        - Type 1 (ReAct): generate_content can use react_loop with AskTool
+          for consulting memory/planner/reviewer during writing
+        - Type 2 (Fixed Sequence): mini_review executes CitationValidatorTool,
+          WordCountTool, and KeyPointCoverageTool in fixed deterministic order
+"""
+from langchain_core.messages import AnyMessage
+from typing_extensions import TypedDict, Annotated, Optional
+import operator
+import re
+import logging
+from typing import TYPE_CHECKING, List, Dict, Any
+from ...config.schema import ModelConfig, ToolsConfig
+from ...prompts import PromptLoader as _PromptLoader
+from ..react_base import ReActAgent
+from .writer_helpers import (
+    build_revision_prompt,
+    clean_latex_output,
+    extract_paragraph_units,
+)
+from .models import (
+    ParagraphResult,
+    CoreContentResult, CitationAction, CitationEditResult,
+)
+from ..shared.tools import (
+    CitationValidatorTool,
+    WordCountTool,
+    KeyPointCoverageTool,
+)
+
+
+logger = logging.getLogger("uvicorn.error")
+
+_prompt_loader = _PromptLoader()
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter
+
+
+_WRITER_SYSTEM_BASE_DEFAULT = """You are an expert academic writer specializing in research paper composition.
+Your task is to generate high-quality LaTeX content for a specific section of a research paper.
+
+You have access to UI rendering tools (`show_markdown`, `show_json_data`). Use them to show intermediate thoughts, tabular data, or highlighted literature to the user in the Canvas while generating content.
+
+CRITICAL RULES:
+1. Generate ONLY LaTeX body content - NO document preamble, NO \\documentclass, NO \\begin{document}
+2. Use proper LaTeX formatting for sections, equations, lists, etc.
+3. Use \\cite{reference_id} for all citations
+4. Use \\ref{label} for cross-references
+5. Use \\includegraphics{figure_id} for figures (just the ID, no path)
+6. FIGURE PLACEMENT: Each figure environment (\\begin{figure}...\\end{figure}) must appear
+   AT MOST ONCE in this section. NEVER create duplicate figure environments for the same figure.
+   If a figure is listed as "REFERENCE ONLY", use \\ref{fig:...} to refer to it — do NOT
+   create a \\begin{figure} environment for it.
+7. Maintain formal academic writing style
+8. Be precise and evidence-based
+9. Structure content logically:
+9.1 If the user prompt includes a "Structure Quality Contract", treat it as **mandatory**.
+    Follow its subsection policy exactly — if it says DO NOT use \\subsection{}, you must not.
+9.2 Only use \\subsection{} commands when the Structure Quality Contract explicitly recommends them.
+    By default, prefer continuous narrative prose with paragraph-level transitions.
+10. CITATION CONSTRAINT: You MUST ONLY use citation keys that are explicitly provided in the resources/references list.
+   DO NOT invent, hallucinate, or use any citation keys that are not in the provided list.
+   DO NOT use placeholder citations like \\cite{need_citation} or similar.
+   If you need to cite something but no suitable reference is provided, simply omit the \\cite command entirely and describe the concept without citation.
+11. NEVER use Markdown formatting. This is a LaTeX document, NOT Markdown.
+    - NO **bold** or __bold__ — use \\textbf{bold}
+    - NO *italic* or _italic_ — use \\textit{italic}
+    - NO ## headings — use \\subsection{} or \\subsubsection{}
+    - NO - bullet lists — use \\begin{itemize} ... \\item ... \\end{itemize}
+    - NO 1. numbered lists — use \\begin{enumerate} ... \\item ... \\end{enumerate}
+    - NO `code` backticks — use \\texttt{code}
+12. CODE EVIDENCE RULE: NEVER reference specific code file names, file paths,
+    or repository structure in the generated text. Code evidence is provided
+    to help you understand the methods — describe algorithms and techniques
+    conceptually (e.g., "a fine-tuned BERT classifier", "convex hull volume
+    computation") rather than citing implementation files (e.g., do NOT write
+    "implemented in \\texttt{code/classify.py}").
+
+ACADEMIC WRITING BASELINE (always enforce):
+1. Use present tense for describing methods and general conclusions;
+   use past tense only for specific experiments already conducted.
+2. NO contractions: write "it is" not "it's", "do not" not "don't",
+   "cannot" not "can't", "will not" not "won't".
+3. NO possessives on method or model names: write "the performance of BERT"
+   not "BERT's performance".
+4. Subject-verb proximity: keep the grammatical subject and main verb close
+   together. Do NOT insert long parenthetical clauses between them.
+5. Stress position: place the most important information (the key result or
+   new concept) at the END of each sentence.
+
+FORMATTING GUIDELINES:
+- For equations: use \\begin{equation} or inline $...$
+- For lists: use \\begin{itemize} or \\begin{enumerate}
+- For emphasis: use \\textit{} or \\textbf{}
+- For code/algorithms: use \\begin{algorithm} or similar
+
+OUTPUT FORMAT:
+Return ONLY the LaTeX content for the section. Do not include explanations or comments outside the LaTeX."""
+
+WRITER_SYSTEM_BASE = _prompt_loader.load(
+    "writer", "writer_system_base", default=_WRITER_SYSTEM_BASE_DEFAULT
+)
+
+
+_REVISION_SYSTEM_PROMPT_DEFAULT = """You are revising a section of an academic paper based on review feedback.
+Your task is to fix the issues identified while maintaining the overall quality and structure.
+
+IMPORTANT:
+- Fix ALL issues mentioned in the feedback
+- Keep the same general structure and content
+- Make minimal changes needed to address the issues
+- Preserve existing valid citations and citation density unless the feedback explicitly requires removal.
+- If citations were flagged as invalid, REMOVE them entirely (don't replace with other citations)
+- NEVER use Markdown formatting — this is LaTeX. Use \\textbf{}, \\textit{}, \\subsection{}, \\begin{itemize}, etc.
+- Preserve or improve structural clarity: thematic block boundaries, transitions, and subsection quality.
+- If the original request contains a Structure Quality Contract, revision MUST continue to satisfy it.
+
+REVISION STRATEGIES BY ISSUE TYPE:
+
+1. EXPAND (word count too low):
+   - Add concrete examples or experimental details to support claims
+   - Expand terse sentences into full reasoning chains
+   - Add transition sentences between paragraphs for better flow
+   - Insert references to figures/tables that were not discussed
+   - Do NOT pad with filler phrases or repeat existing points
+
+2. REDUCE (word count too high):
+   - Remove redundant sentences that restate the same point
+   - Merge short paragraphs that cover the same sub-topic
+   - Replace verbose phrases: "in order to" → "to", "due to the fact that" → "because"
+   - Remove hedging phrases: "It is worth noting that X" → "X"
+   - Cut the weakest supporting argument if multiple are given
+
+3. STYLE FIX (AI-style language, contractions, etc.):
+   - Replace flagged AI-style words with concrete academic alternatives
+   - Expand all contractions: "it's" → "it is", "don't" → "do not"
+   - Rewrite possessives on method names: "BERT's" → "the performance of BERT"
+   - Break up stacked connective adverbs (Furthermore...Moreover...Additionally)
+   - Move key results to sentence-final (stress) position
+
+4. STRUCTURE FIX (block clarity / subsection quality):
+   - Keep major thematic blocks distinguishable after edits
+   - Add or refine transition sentences between blocks when needed
+   - Do NOT add \\subsection{} commands unless the original Structure Quality Contract allows them
+   - Avoid collapsing multiple themes into one undifferentiated paragraph chain
+
+Return ONLY the revised LaTeX content."""
+
+REVISION_SYSTEM_PROMPT = _prompt_loader.load(
+    "writer", "revision_system", default=_REVISION_SYSTEM_PROMPT_DEFAULT
+)
+
+
+class WriterAgentState(TypedDict):
+    """
+    State for Writer Agent workflow with iterative review support.
+    """
+    messages: Annotated[list[AnyMessage], operator.add]
+    system_prompt: Optional[str]
+    user_prompt: Optional[str]
+    section_type: Optional[str]
+    citation_format: Optional[str]
+    constraints: Optional[List[str]]
+    generated_content: Optional[str]
+    citation_ids: Optional[List[str]]
+    figure_ids: Optional[List[str]]
+    table_ids: Optional[List[str]]
+    llm_calls: int
+
+    # Iterative review fields
+    iteration: int
+    max_iterations: int
+    enable_review: bool
+
+    # Review context
+    valid_citation_keys: Optional[List[str]]
+    target_words: Optional[int]
+    key_points: Optional[List[str]]
+
+    # Review results
+    review_result: Optional[Dict[str, Any]]
+    revision_prompt: Optional[str]
+    revision_plan: Optional[Dict[str, Any]]
+    review_history: Annotated[List[Dict[str, Any]], operator.add]
+    writer_response_section: Annotated[List[Dict[str, Any]], operator.add]
+    writer_response_paragraph: Annotated[List[Dict[str, Any]], operator.add]
+
+    # Final tracking
+    invalid_citations_removed: Optional[List[str]]
+    paragraph_units: Optional[List[Dict[str, Any]]]
+
+    # Shared memory + peer agents for AskTool (ReAct consultation)
+    memory: Optional[Any]
+    peers: Optional[Dict[str, Any]]
+    mode: Optional[str]
+    current_content: Optional[str]
+
+
+class WriterAgent(ReActAgent):
+    """
+    Writer Agent for generating LaTeX content with iterative review.
+
+    - **Description**:
+        - Inherits from ReActAgent for access to react_loop and setup_tools.
+        - Generates academic LaTeX content based on compiled prompts.
+        - Dual-mode tool invocation:
+            - Type 1 (ReAct): generate_content can optionally use react_loop
+              with AskTool for consulting memory/planner/reviewer.
+            - Type 2 (Fixed Sequence): mini_review executes citation validation,
+              word count, and key point coverage tools in fixed order.
+        - Iteratively revises content based on review feedback.
+        - Extracts citations and figure references from generated content.
+    """
+
+    def __init__(self, config: ModelConfig, tools_config: Optional[ToolsConfig] = None):
+        if tools_config is None:
+            tools_config = ToolsConfig(
+                enabled=True,
+                available_tools=[
+                    "validate_citations",
+                    "count_words",
+                    "check_key_points",
+                ],
+                max_react_iterations=3,
+            )
+        super().__init__(config, tools_config)
+
+    _build_revision_prompt = staticmethod(build_revision_prompt)
+    _extract_paragraph_units = staticmethod(extract_paragraph_units)
+    _clean_latex_output = staticmethod(clean_latex_output)
+
+    def _should_revise(self, state: WriterAgentState) -> str:
+        """
+        Conditional edge: decide whether to revise or finish.
+
+        Returns:
+            "revise" if revision needed, "done" otherwise
+        """
+        # Check if review is enabled
+        if not state.get("enable_review", True):
+            return "done"
+
+        review = state.get("review_result", {})
+        iteration = state.get("iteration", 1)
+        max_iter = state.get("max_iterations", 2)
+
+        # If review passed or max iterations reached, we're done
+        if review.get("passed", True):
+            print(f"[WriterAgent] Review passed at iteration {iteration}")
+            return "done"
+
+        if iteration >= max_iter:
+            print(f"[WriterAgent] Max iterations ({max_iter}) reached")
+            return "done"
+
+        print(f"[WriterAgent] Revision needed (iteration {iteration}/{max_iter})")
+        return "revise"
+
+    async def generate_content(self, state: WriterAgentState) -> Dict[str, Any]:
+        """
+        Generate LaTeX content using ReAct loop with AskTool access.
+        - **Description**:
+            - Registers the ``ask`` tool (backed by memory/planner/reviewer)
+              so the LLM can consult them during writing.
+            - Falls back to a plain LLM call when no tools are available.
+        """
+        print(f"[WriterAgent] Generating content for: {state.get('section_type')}")
+
+        system_prompt = state.get("system_prompt", "")
+        user_prompt = state.get("user_prompt", "")
+        mode = (state.get("mode") or "draft").strip().lower()
+        citation_format = state.get("citation_format", "cite")
+        memory = state.get("memory")
+        peers = state.get("peers") or {}
+        current_content = state.get("current_content", "") or ""
+        revision_plan = state.get("revision_plan") or {}
+
+        if mode == "revision":
+            messages = [
+                {"role": "system", "content": REVISION_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Original request:\n{user_prompt}"},
+                {"role": "assistant", "content": current_content},
+                {
+                    "role": "user",
+                    "content": (
+                        "Revise the section according to the instruction and constraints.\n"
+                        f"Structured revision plan:\n{revision_plan}"
+                    ),
+                },
+            ]
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=0.35,
+                )
+                revised_content = response.choices[0].message.content or ""
+                revised_content = self._clean_latex_output(revised_content)
+                return {
+                    "generated_content": revised_content,
+                    "llm_calls": state.get("llm_calls", 0) + 1,
+                    "iteration": 1,
+                }
+            except Exception as e:
+                print(f"[WriterAgent] Error generating revision content: {e}")
+                return {
+                    "generated_content": current_content,
+                    "llm_calls": state.get("llm_calls", 0) + 1,
+                    "iteration": 1,
+                }
+
+        full_system = f"{WRITER_SYSTEM_BASE}\n\n{system_prompt}"
+
+        if citation_format != "cite":
+            full_system = full_system.replace(
+                "\\cite{reference_id}",
+                f"\\{citation_format}{{reference_id}}",
+            )
+
+        # Build tool context for AskTool + PaperSearchTool + UI Tools
+        tool_context: Dict[str, Any] = {
+            "valid_keys": set(state.get("valid_citation_keys", [])),
+            "key_points": state.get("key_points", []),
+        }
+        tool_names: List[str] = ["show_markdown", "show_json_data"]
+
+        if memory is not None:
+            tool_context["memory"] = memory
+            tool_names.append("ask")
+        if peers.get("planner"):
+            tool_context["planner"] = peers["planner"]
+            if "ask" not in tool_names:
+                tool_names.append("ask")
+        if peers.get("reviewer"):
+            tool_context["reviewer"] = peers["reviewer"]
+            if "ask" not in tool_names:
+                tool_names.append("ask")
+
+        self.setup_tools(tool_names, **tool_context)
+
+        messages = [
+            {"role": "system", "content": full_system},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        try:
+            generated_content, _ = await self.react_loop(
+                messages=messages,
+                tool_names=tool_names,
+                temperature=0.7,
+            )
+            generated_content = self._clean_latex_output(generated_content)
+        except Exception as e:
+            print(f"[WriterAgent] Error generating content: {e}")
+            generated_content = f"% Error generating content: {str(e)}"
+
+        return {
+            "generated_content": generated_content,
+            "llm_calls": state.get("llm_calls", 0) + 1,
+            "iteration": 1,
+        }
+
+    async def mini_review(self, state: WriterAgentState) -> Dict[str, Any]:
+        """
+        Perform mini-review on generated content.
+
+        Checks:
+        - Citation validity (using CitationValidatorTool)
+        - Word count vs target (using WordCountTool)
+        - Key point coverage (if key_points provided)
+        """
+        content = state.get("generated_content", "")
+        section_type = state.get("section_type", "unknown")
+
+        print(f"[WriterAgent] Mini-review for {section_type} (iteration {state.get('iteration', 1)})")
+
+        issues = []
+        warnings = []
+        invalid_citations = []
+        fixed_content = content
+
+        # 1. Citation validation — auto-fix removes invalid keys from content,
+        #    so we treat it as a warning (not a blocking issue) to avoid
+        #    triggering a revision loop where the LLM reintroduces them.
+        valid_keys = set(state.get("valid_citation_keys", []))
+        if valid_keys:
+            validator = CitationValidatorTool(valid_keys)
+            result = await validator.execute(content=content, fix_invalid=True)
+
+            if result.data:
+                invalid_citations = result.data.get("invalid_citations", [])
+                if invalid_citations:
+                    fixed_content = result.data.get("fixed_content", content)
+                    warnings.append(f"Auto-removed {len(invalid_citations)} invalid citations: {invalid_citations}")
+
+        # 2. Word count (informational only — not a pass/fail criterion)
+        word_counter = WordCountTool()
+        target_words = state.get("target_words")
+        wc_result = await word_counter.execute(content=fixed_content, target_words=target_words)
+        word_count = wc_result.data.get("word_count", 0) if wc_result.data else 0
+
+        # 3. Key point coverage — all key points must be addressed
+        key_points = state.get("key_points", [])
+        coverage = 1.0
+        missing_kps: list = []
+        if key_points:
+            kp_tool = KeyPointCoverageTool(key_points)
+            kp_result = await kp_tool.execute(content=fixed_content)
+
+            if kp_result.data:
+                coverage = kp_result.data.get("coverage", 1.0)
+                missing_kps = kp_result.data.get("missing", [])
+                if coverage < 1.0 and missing_kps:
+                    issues.append(
+                        f"Missing key points ({coverage:.0%} coverage): "
+                        + "; ".join(missing_kps[:5])
+                    )
+
+        # Determine if passed
+        passed = len(issues) == 0
+
+        # Build review result
+        review_result = {
+            "passed": passed,
+            "issues": issues,
+            "warnings": warnings,
+            "invalid_citations": invalid_citations,
+            "word_count": word_count,
+            "target_words": target_words,
+            "key_point_coverage": coverage,
+            "missing_key_points": missing_kps,
+        }
+
+        # Build revision prompt if needed
+        revision_prompt = None
+        if not passed:
+            revision_prompt = self._build_revision_prompt(review_result)
+
+        # Log review results
+        if issues:
+            print(f"[WriterAgent] Mini-review issues: {issues}")
+        if warnings:
+            print(f"[WriterAgent] Mini-review warnings: {warnings}")
+
+        return {
+            "generated_content": fixed_content,  # Use fixed content with invalid citations removed
+            "review_result": review_result,
+            "revision_prompt": revision_prompt,
+            "review_history": [review_result],
+            "invalid_citations_removed": invalid_citations,
+        }
+
+    async def revise_content(self, state: WriterAgentState) -> Dict[str, Any]:
+        """
+        Revise content based on review feedback.
+        """
+        print(f"[WriterAgent] Revising content (iteration {state.get('iteration', 1) + 1})")
+
+        revision_prompt = state.get("revision_prompt", "")
+        revision_plan = state.get("revision_plan") or {}
+        previous_content = state.get("generated_content", "")
+        original_user_prompt = state.get("user_prompt", "")
+        section_type = state.get("section_type", "unknown")
+
+        # Build multi-turn conversation for revision
+        messages = [
+            {"role": "system", "content": REVISION_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Original request:\n{original_user_prompt}"},
+            {"role": "assistant", "content": previous_content},
+            {
+                "role": "user",
+                "content": (
+                    f"Review feedback - please revise:\n{revision_prompt}\n\n"
+                    f"Structured revision plan (must follow if provided):\n"
+                    f"{revision_plan}"
+                ),
+            }
+        ]
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.5,  # Lower temperature for revision
+            )
+
+            revised_content = response.choices[0].message.content
+            revised_content = self._clean_latex_output(revised_content)
+
+        except Exception as e:
+            print(f"[WriterAgent] Error revising content: {e}")
+            revised_content = previous_content  # Keep previous if revision fails
+
+        changed = revised_content.strip() != previous_content.strip()
+        disposition = "executed" if changed else "no_change"
+        section_target = str(
+            revision_plan.get("section_type")
+            or revision_plan.get("target")
+            or section_type
+        )
+        normalized_constraints = revision_plan.get("constraints", {}) or {}
+        constraints_payload = {
+            "preserve_claims": (
+                normalized_constraints.get("preserve_claims", [])
+                if isinstance(normalized_constraints, dict)
+                else revision_plan.get("preserve_claims", [])
+            ),
+            "do_not_change": (
+                normalized_constraints.get("do_not_change", [])
+                if isinstance(normalized_constraints, dict)
+                else revision_plan.get("do_not_change", [])
+            ),
+        }
+        section_response = {
+            "target_id": section_target,
+            "section_type": section_target,
+            "instruction": str(
+                revision_plan.get("instruction")
+                or revision_prompt
+                or "Apply upstream review instructions exactly."
+            ),
+            "constraints": constraints_payload,
+            "disposition": disposition,
+            "evidence": {
+                "before_words": len(previous_content.split()),
+                "after_words": len(revised_content.split()),
+            },
+        }
+        paragraph_responses: List[Dict[str, Any]] = []
+        target_paragraphs = revision_plan.get("target_paragraphs", []) or []
+        para_instructions = revision_plan.get("paragraph_instructions", {}) or {}
+        for pidx in target_paragraphs:
+            if not isinstance(pidx, int) and not str(pidx).isdigit():
+                continue
+            pid = int(pidx)
+            paragraph_responses.append({
+                "target_id": f"{section_target}.p{pid}",
+                "section_type": section_target,
+                "paragraph_index": pid,
+                "instruction": str(para_instructions.get(pid, para_instructions.get(str(pid), ""))),
+                "constraints": constraints_payload,
+                "disposition": disposition,
+                "evidence": {
+                    "content_changed": changed,
+                },
+            })
+
+        return {
+            "generated_content": revised_content,
+            "llm_calls": state.get("llm_calls", 0) + 1,
+            "iteration": state.get("iteration", 1) + 1,
+            "writer_response_section": [section_response],
+            "writer_response_paragraph": paragraph_responses,
+        }
+
+    async def extract_references(self, state: WriterAgentState) -> Dict[str, Any]:
+        """
+        Extract citation and figure references from generated content,
+        then persist the result in SessionMemory if available.
+        """
+        print(f"[WriterAgent] Extracting references")
+
+        content = state.get("generated_content", "")
+        citation_format = state.get("citation_format", "cite")
+        section_type = state.get("section_type", "unknown")
+        memory = state.get("memory")
+
+        # Extract citations
+        cite_pattern = rf'\\{citation_format}\{{([^}}]+)\}}'
+        citation_matches = re.findall(cite_pattern, content)
+        citation_ids = []
+        for match in citation_matches:
+            for cid in match.split(','):
+                cid = cid.strip()
+                if cid and cid not in citation_ids:
+                    citation_ids.append(cid)
+
+        if citation_format != "cite":
+            std_matches = re.findall(r'\\cite\{([^}]+)\}', content)
+            for match in std_matches:
+                for cid in match.split(','):
+                    cid = cid.strip()
+                    if cid and cid not in citation_ids:
+                        citation_ids.append(cid)
+
+        # Extract figure references
+        figure_pattern = r'\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}'
+        figure_ids = list(set(re.findall(figure_pattern, content)))
+
+        # Extract table references
+        table_pattern = r'\\begin\{table\}.*?\\label\{([^}]+)\}'
+        table_ids = list(set(re.findall(table_pattern, content, re.DOTALL)))
+
+        # Persist to SessionMemory
+        if memory is not None:
+            memory.update_section(section_type, content)
+            wc = len(content.split())
+            memory.log(
+                "writer", "generation", f"completed_{section_type}",
+                narrative=f"Writer finished drafting {section_type} ({wc} words, {len(citation_ids)} citations, {state.get('iteration', 1)} iteration(s)).",
+                word_count=wc,
+                iterations=state.get("iteration", 1),
+                citations=len(citation_ids),
+            )
+
+        paragraph_units = self._extract_paragraph_units(
+            section_type=section_type,
+            latex_content=content,
+        )
+
+        return {
+            "citation_ids": citation_ids,
+            "figure_ids": figure_ids,
+            "table_ids": table_ids,
+            "paragraph_units": paragraph_units,
+            "writer_response_section": state.get("writer_response_section", []),
+            "writer_response_paragraph": state.get("writer_response_paragraph", []),
+        }
+
+    async def run(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        section_type: str = "introduction",
+        citation_format: str = "cite",
+        constraints: Optional[List[str]] = None,
+        valid_citation_keys: Optional[List[str]] = None,
+        target_words: Optional[int] = None,
+        key_points: Optional[List[str]] = None,
+        revision_plan: Optional[Dict[str, Any]] = None,
+        max_iterations: int = 2,
+        enable_review: bool = True,
+        memory: Optional[Any] = None,
+        peers: Optional[Dict[str, Any]] = None,
+        mode: str = "draft",
+        current_content: Optional[str] = None,
+        ):
+        """
+        .. deprecated::
+            All section generation now uses the decomposed 3-stage pipeline.
+            This method is retained for backward compatibility with external callers.
+        Run the Writer Agent with iterative review and ReAct consultation.
+
+        - **Args**:
+            - `system_prompt` (str): Full system prompt with context
+            - `user_prompt` (str): Writing instruction
+            - `section_type` (str): Type of section being written
+            - `citation_format` (str): Citation command format
+            - `constraints` (List[str], optional): Additional constraints
+            - `valid_citation_keys` (List[str], optional): Valid citation keys
+            - `target_words` (int, optional): Target word count
+            - `key_points` (List[str], optional): Key points to cover
+            - `revision_plan` (Dict[str, Any], optional): Paragraph-level revision constraints
+            - `max_iterations` (int): Maximum revision iterations
+            - `enable_review` (bool): Whether to enable mini-review
+            - `memory` (SessionMemory, optional): Shared session memory
+            - `peers` (Dict, optional): Peer agents for AskTool routing
+              e.g. ``{"planner": planner_agent, "reviewer": reviewer_agent}``
+
+        - **Returns**:
+            - `dict`: Generated content and review results
+        """
+        state: WriterAgentState = {
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+            "section_type": section_type,
+            "citation_format": citation_format,
+            "constraints": constraints or [],
+            "messages": [],
+            "llm_calls": 0,
+            # Review context
+            "valid_citation_keys": valid_citation_keys or [],
+            "target_words": target_words,
+            "key_points": key_points or [],
+            "revision_plan": revision_plan or {},
+            "max_iterations": max_iterations,
+            "enable_review": enable_review,
+            # Initialize iteration
+            "iteration": 0,
+            "review_history": [],
+            "writer_response_section": [],
+            "writer_response_paragraph": [],
+            # Shared memory + peers for ReAct AskTool
+            "memory": memory,
+            "peers": peers,
+            "paragraph_units": [],
+            "mode": mode,
+            "current_content": current_content,
+        }
+        generated = await self.generate_content(state)
+        state.update(generated)
+
+        while True:
+            if state.get("enable_review", True):
+                review_update = await self.mini_review(state)
+                state.update({
+                    k: v for k, v in review_update.items()
+                    if k not in {"review_history"}
+                })
+                state["review_history"] = (
+                    list(state.get("review_history", []))
+                    + list(review_update.get("review_history", []))
+                )
+
+                if self._should_revise(state) == "revise":
+                    revised = await self.revise_content(state)
+                    state.update({
+                        k: v for k, v in revised.items()
+                        if k not in {"writer_response_section", "writer_response_paragraph"}
+                    })
+                    state["writer_response_section"] = (
+                        list(state.get("writer_response_section", []))
+                        + list(revised.get("writer_response_section", []))
+                    )
+                    state["writer_response_paragraph"] = (
+                        list(state.get("writer_response_paragraph", []))
+                        + list(revised.get("writer_response_paragraph", []))
+                    )
+                    continue
+            break
+
+        extracted = await self.extract_references(state)
+        state.update(extracted)
+        return state
+
+    @property
+    def name(self) -> str:
+        return "writer"
+
+    @property
+    def description(self) -> str:
+        return "Generates LaTeX content with iterative review for academic quality"
+
+    @property
+    def router(self) -> "APIRouter":
+        from .router import create_writer_router
+        return create_writer_router(self)
+
+    @property
+    def endpoints_info(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "path": "/agent/writer/generate",
+                "method": "POST",
+                "description": "Generate LaTeX content for a paper section with iterative review",
+                "input_model": "WriterPayload",
+                "output_model": "WriterResult"
+            },
+            {
+                "path": "/agent/writer/write-section",
+                "method": "POST",
+                "description": "Direct section writing with provided context (standalone API)",
+                "input_model": "SectionWritePayload",
+                "output_model": "SectionWriteResult"
+            }
+        ]
+
+    # -----------------------------------------------------------------
+    # Decomposed generation: paragraph-level
+    # -----------------------------------------------------------------
+
+    async def generate_paragraph(
+        self,
+        paragraph_prompt: str,
+        section_type: str,
+        paragraph_index: int,
+        valid_refs: List[str],
+        claim_id: str = "",
+        max_retries: int = 2,
+    ) -> "ParagraphResult":
+        """
+        Generate a single paragraph from a focused paragraph-level prompt.
+
+        - **Description**:
+            - Used by the decomposed (claim-level) generation pipeline in
+              MetaDataAgent._generate_section_decomposed.
+            - Generates LaTeX content for one paragraph, validates citations,
+              counts words, and returns a ParagraphResult.
+
+        - **Args**:
+            - ``paragraph_prompt`` (str): The compiled paragraph prompt.
+            - ``section_type`` (str): Parent section type (for logging).
+            - ``paragraph_index`` (int): 0-based index of the paragraph.
+            - ``valid_refs`` (List[str]): Allowed citation keys.
+            - ``claim_id`` (str): Claim ID from the evidence DAG.
+            - ``max_retries`` (int): Retry count for citation violations.
+
+        - **Returns**:
+            - ``ParagraphResult``: Generated content + metadata.
+        """
+        messages = [
+            {"role": "system", "content": WRITER_SYSTEM_BASE},
+            {"role": "user", "content": paragraph_prompt},
+        ]
+
+        valid_set = set(valid_refs)
+        latex_content = ""
+        used_citations: List[str] = []
+        attempt = 0
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=0.7,
+                )
+                raw = response.choices[0].message.content or ""
+                latex_content = raw.strip()
+
+                cite_pattern = re.compile(r"\\cite\{([^}]+)\}")
+                used_citations = []
+                for match in cite_pattern.finditer(latex_content):
+                    for key in match.group(1).split(","):
+                        k = key.strip()
+                        if k:
+                            used_citations.append(k)
+
+                invalid_cites = [c for c in used_citations if c not in valid_set]
+                if not invalid_cites:
+                    break
+
+                for ic in invalid_cites:
+                    latex_content = latex_content.replace(f"\\cite{{{ic}}}", "")
+                    latex_content = re.sub(
+                        r"~?\\cite\{" + re.escape(ic) + r"\}", "", latex_content
+                    )
+                used_citations = [c for c in used_citations if c in valid_set]
+                logger.warning(
+                    "writer.generate_paragraph citation_fix attempt=%d section=%s para=%d invalid=%s",
+                    attempt, section_type, paragraph_index, invalid_cites,
+                )
+            except Exception as e:
+                logger.error(
+                    "writer.generate_paragraph error attempt=%d section=%s para=%d: %s",
+                    attempt, section_type, paragraph_index, str(e),
+                )
+                if attempt >= max_retries:
+                    return ParagraphResult(
+                        paragraph_index=paragraph_index,
+                        claim_id=claim_id,
+                        attempt=attempt,
+                    )
+
+        word_count = len(latex_content.split())
+        return ParagraphResult(
+            latex_content=latex_content,
+            paragraph_index=paragraph_index,
+            claim_id=claim_id,
+            used_citations=list(set(used_citations)),
+            word_count=word_count,
+            attempt=attempt,
+        )
+
+    # -----------------------------------------------------------------
+    # Template-slot degraded generation
+    # -----------------------------------------------------------------
+
+    async def generate_from_template(
+        self,
+        template_prompt: str,
+        section_type: str,
+        paragraph_index: int,
+        valid_refs: List[str],
+    ) -> "ParagraphResult":
+        """
+        Generate content by filling a structured template (degraded mode).
+
+        - **Description**:
+            - When normal generation exceeds retry limits or the paragraph has
+              a ``paragraph_template`` set in its plan, this method fills
+              pre-defined slots to ensure coverage of required claims.
+            - Produces conservative but structurally correct output.
+
+        - **Args**:
+            - ``template_prompt`` (str): Compiled template fill prompt.
+            - ``section_type`` (str): Parent section type.
+            - ``paragraph_index`` (int): 0-based index.
+            - ``valid_refs`` (List[str]): Allowed citation keys.
+
+        - **Returns**:
+            - ``ParagraphResult``: Generated content from template.
+        """
+        messages = [
+            {"role": "system", "content": (
+                "You are filling a structured template for an academic paper paragraph. "
+                "Fill each slot with appropriate academic content. "
+                "Use ONLY the provided citation keys. Output LaTeX only."
+            )},
+            {"role": "user", "content": template_prompt},
+        ]
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.5,
+            )
+            raw = response.choices[0].message.content or ""
+            latex_content = raw.strip()
+
+            valid_set = set(valid_refs)
+            cite_pattern = re.compile(r"\\cite\{([^}]+)\}")
+            used_citations: List[str] = []
+            for match in cite_pattern.finditer(latex_content):
+                for key in match.group(1).split(","):
+                    k = key.strip()
+                    if k and k in valid_set:
+                        used_citations.append(k)
+
+            word_count = len(latex_content.split())
+            return ParagraphResult(
+                latex_content=latex_content,
+                paragraph_index=paragraph_index,
+                used_citations=list(set(used_citations)),
+                word_count=word_count,
+                verification_passed=True,
+            )
+        except Exception as e:
+            logger.error(
+                "writer.generate_from_template error section=%s para=%d: %s",
+                section_type, paragraph_index, str(e),
+            )
+            return ParagraphResult(paragraph_index=paragraph_index)
+
+    # -----------------------------------------------------------------
+    # Decomposed pipeline: Stage 1 — Core content (no citations)
+    # -----------------------------------------------------------------
+
+    async def generate_core_content(
+        self,
+        core_prompt: str,
+        section_type: str,
+        paragraph_index: int,
+        max_retries: int = 2,
+    ) -> CoreContentResult:
+        """
+        Generate core academic prose with CITE/FLOAT markers (Stage 1).
+        - **Description**:
+            - Produces pure prose without \\cite{} or \\ref{} commands.
+            - The LLM marks citation-needed spots with [CITE:{topic}]
+              and float reference spots with [FLOAT:{id}].
+
+        - **Args**:
+            - `core_prompt` (str): Compiled prompt from compile_core_prompt.
+            - `section_type` (str): Parent section type for logging.
+            - `paragraph_index` (int): 0-based index.
+            - `max_retries` (int): Retry count.
+
+        - **Returns**:
+            - `CoreContentResult`: Raw LaTeX with markers.
+        """
+        messages = [
+            {"role": "system", "content": (
+                "You are an expert academic writer. Write high-quality prose. "
+                "Mark citation-needed spots with [CITE:{topic}] markers. "
+                "Mark figure/table discussion spots with [FLOAT:{id}] markers. "
+                "Do NOT use \\cite{} or \\ref{} commands."
+            )},
+            {"role": "user", "content": core_prompt},
+        ]
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=0.7,
+                )
+                raw = response.choices[0].message.content or ""
+                latex_content = raw.strip()
+
+                word_count = len(latex_content.split())
+                return CoreContentResult(
+                    raw_latex=latex_content,
+                    paragraph_index=paragraph_index,
+                    word_count=word_count,
+                    attempt=attempt,
+                )
+            except Exception as e:
+                logger.error(
+                    "writer.generate_core_content error attempt=%d section=%s para=%d: %s",
+                    attempt, section_type, paragraph_index, str(e),
+                )
+                if attempt >= max_retries:
+                    return CoreContentResult(
+                        paragraph_index=paragraph_index,
+                        attempt=attempt,
+                    )
+
+        return CoreContentResult(paragraph_index=paragraph_index)
+
+    # -----------------------------------------------------------------
+    # Decomposed pipeline: Stage 2 — Citation injection
+    # -----------------------------------------------------------------
+
+    async def inject_citations(
+        self,
+        citation_prompt: str,
+        valid_refs: List[str],
+    ) -> CitationEditResult:
+        """
+        Produce citation edit instructions via LLM (Stage 2).
+        - **Description**:
+            - Takes a prompt with the raw text and reference pool,
+              asks the LLM to return a JSON array of CitationAction edits.
+
+        - **Args**:
+            - `citation_prompt` (str): Compiled from compile_citation_prompt.
+            - `valid_refs` (List[str]): Allowed citation keys.
+
+        - **Returns**:
+            - `CitationEditResult`: Parsed edit actions.
+        """
+        import json
+
+        messages = [
+            {"role": "system", "content": (
+                "You are a citation specialist. Analyze the text and reference pool, "
+                "then output a JSON array of citation edit actions. "
+                "Output ONLY the JSON array, no other text."
+            )},
+            {"role": "user", "content": citation_prompt},
+        ]
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.3,
+            )
+            raw = response.choices[0].message.content or ""
+            raw = raw.strip()
+
+            if raw.startswith("```"):
+                lines = raw.split("\n")
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                raw = "\n".join(lines)
+
+            valid_set = set(valid_refs)
+            actions: List[CitationAction] = []
+
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, dict):
+                            cite_keys = item.get("cite_keys", [])
+                            filtered = [k for k in cite_keys if k in valid_set]
+                            actions.append(CitationAction(
+                                action=item.get("action", "replace_marker"),
+                                marker_or_location=item.get("marker_or_location", ""),
+                                new_text=item.get("new_text", ""),
+                                cite_keys=filtered,
+                            ))
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("writer.inject_citations json_parse_error")
+
+            return CitationEditResult(actions=actions, raw_response=raw)
+        except Exception as e:
+            logger.error("writer.inject_citations error: %s", str(e))
+            return CitationEditResult(raw_response=str(e))
+
+    # -----------------------------------------------------------------
+    # Direct rewrite helper for migrated internal revision flows
+    # -----------------------------------------------------------------
+
+    async def rewrite_content(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        section_type: str,
+        max_retries: int = 2,
+    ) -> str:
+        """
+        Rewrite content directly without using the deprecated LangGraph writer flow.
+        - **Description**:
+            - Used by internal revision paths that need direct rewrite behavior
+              instead of the decomposed draft/citation pipeline.
+            - Keeps router/backward-compatibility behavior separate from the
+              active internal execution path.
+
+        - **Args**:
+            - `system_prompt` (str): Rewrite instructions for the model.
+            - `user_prompt` (str): Concrete content and revision request.
+            - `section_type` (str): Section identifier for logging.
+            - `max_retries` (int): Retry count.
+
+        - **Returns**:
+            - `str`: Rewritten content, or empty string on failure.
+        """
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=0.3,
+                )
+                content = (response.choices[0].message.content or "").strip()
+                if content:
+                    return content
+            except Exception as e:
+                logger.error(
+                    "writer.rewrite_content error attempt=%d section=%s: %s",
+                    attempt, section_type, str(e),
+                )
+        return ""

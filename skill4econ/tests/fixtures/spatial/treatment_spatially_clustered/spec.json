@@ -1,0 +1,8 @@
+{
+  "method": "spatial_moran_preflight",
+  "id": "city",
+  "time": "year",
+  "y": "y",
+  "treat": "treat",
+  "weights": "weights.csv"
+}

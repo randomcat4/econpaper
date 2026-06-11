@@ -1,0 +1,6 @@
+{
+  "fixture": "anticipation_effect",
+  "expected_risks": [
+    "ANTICIPATION_RISK"
+  ]
+}

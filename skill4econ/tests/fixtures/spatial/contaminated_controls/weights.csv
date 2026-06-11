@@ -1,0 +1,6 @@
+source,target,weight,distance_km
+B,A,1.0,30.0
+D,C,1.0,60.0
+E,A,0.5,200.0
+E,C,0.5,250.0
+F,B,1.0,40.0

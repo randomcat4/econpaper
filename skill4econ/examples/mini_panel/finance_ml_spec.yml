@@ -1,0 +1,9 @@
+data: skill4econ/examples/mini_panel/mini_panel.csv
+time: year
+y: y
+x: [x1, x2]
+split:
+  type: chronological
+  train_end: 2019
+  test_start: 2020
+output_dir: skill4econ/runs

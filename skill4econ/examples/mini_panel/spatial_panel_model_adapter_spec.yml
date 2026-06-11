@@ -1,0 +1,2 @@
+impact_decomposition: skill4econ/examples/mini_panel/spatial_impacts.csv
+output_dir: skill4econ/runs

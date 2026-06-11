@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+runs/
+runs_*/
+artifacts/
+examples/mini_panel/dea_t1.xlsx
+vendor_sources/*
+!vendor_sources/
+!vendor_sources/README.md

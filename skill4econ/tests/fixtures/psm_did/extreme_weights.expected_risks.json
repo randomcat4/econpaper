@@ -1,0 +1,7 @@
+{
+  "fixture": "extreme_weights",
+  "expected_risks": [
+    "EXTREME_IPW_WEIGHTS",
+    "LOW_EFFECTIVE_SAMPLE_SIZE"
+  ]
+}

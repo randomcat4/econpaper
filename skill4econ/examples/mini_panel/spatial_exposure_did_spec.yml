@@ -1,0 +1,13 @@
+data: skill4econ/examples/mini_panel/mini_panel.csv
+weights: skill4econ/examples/mini_panel/spatial_weights.csv
+id: firm_id
+time: year
+y: y
+treat: treat
+post: post
+cluster: firm_id
+row_standardize: true
+distance_rings_km: [50, 100]
+near_exposure_threshold: 0
+run_event_study: false
+output_dir: skill4econ/runs

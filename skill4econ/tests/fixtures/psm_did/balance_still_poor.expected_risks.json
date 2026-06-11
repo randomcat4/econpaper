@@ -1,0 +1,6 @@
+{
+  "fixture": "balance_still_poor",
+  "expected_risks": [
+    "BALANCE_STILL_POOR"
+  ]
+}

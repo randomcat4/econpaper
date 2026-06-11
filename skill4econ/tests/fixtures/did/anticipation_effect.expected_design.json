@@ -1,0 +1,12 @@
+{
+  "fixture": "anticipation_effect",
+  "spec": {
+    "id": "unit",
+    "time": "year",
+    "y": "y",
+    "treat": "treat",
+    "gvar": "gvar",
+    "anticipation_periods": 1
+  },
+  "expected_design_type": "staggered_adoption"
+}

@@ -1,0 +1,8 @@
+{
+  "fixture": "overlap_poor",
+  "expected_risks": [
+    "OFF_SUPPORT_HIGH_SHARE",
+    "POOR_OVERLAP",
+    "PSM_SAMPLE_LOSS_HIGH"
+  ]
+}

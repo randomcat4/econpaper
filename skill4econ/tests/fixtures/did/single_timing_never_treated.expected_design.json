@@ -1,0 +1,11 @@
+{
+  "fixture": "single_timing_never_treated",
+  "spec": {
+    "id": "unit",
+    "time": "year",
+    "y": "y",
+    "treat": "treat",
+    "post": "post"
+  },
+  "expected_design_type": "single_timing"
+}

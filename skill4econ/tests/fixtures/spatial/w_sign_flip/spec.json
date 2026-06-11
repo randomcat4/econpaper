@@ -1,0 +1,14 @@
+{
+  "method": "spatial_w_sensitivity",
+  "id": "city",
+  "time": "year",
+  "y": "y",
+  "treat": "treat",
+  "weights": "w1.csv",
+  "weight_paths": [
+    "w2.csv",
+    "w3.csv"
+  ],
+  "near_exposure_threshold": 0,
+  "run_event_study": false
+}

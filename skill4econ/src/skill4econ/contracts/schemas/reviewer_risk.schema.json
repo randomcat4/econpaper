@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "skill4econ reviewer_risk.json",
+  "type": "object",
+  "required": ["workflow", "risk_level", "risks"],
+  "properties": {
+    "risk_level": {"enum": ["low", "medium", "high", "fatal"]},
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "scope", "message", "claim_degradation"]
+      }
+    }
+  }
+}

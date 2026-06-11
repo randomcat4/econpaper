@@ -1,0 +1,275 @@
+# EasyPaper
+
+EasyPaper is a multi-agent academic paper generation system. It turns a small set of metadata
+(title, idea, method, data, experiments, references) into a structured LaTeX paper and optionally
+compiles it into a PDF through a typesetting agent.
+
+EasyPaper can be used in two modes:
+
+- **SDK mode** — `pip install -e .` and call from Python directly (no server needed)
+- **Server mode** — `pip install -e ".[server]"` and run as a FastAPI service
+
+## Features
+
+- Multi-agent pipeline: planning, writing, review, typesetting, and optional VLM review
+- Python SDK for in-process paper generation (`from easypaper import EasyPaper`)
+- Optional FastAPI service with health and agent discovery endpoints
+- Streaming progress via `generate_stream()` (SDK) or SSE (server)
+- CLI scripts for metadata-driven generation and paper assembly demos
+- LaTeX output with citation validation, figure/table injection, and review loop
+
+## Requirements
+
+- Python 3.11+
+- LaTeX toolchain (`pdflatex` + `bibtex`) for PDF compilation
+- [Poppler](https://poppler.freedesktop.org/) — required by `pdf2image` for PDF-to-image conversion
+  - macOS: `brew install poppler`
+  - Ubuntu/Debian: `apt install poppler-utils`
+- Model API keys configured in YAML (see [Config](#config))
+
+## Quickstart (SDK mode)
+
+1. Install dependencies:
+
+```bash
+# Minimal SDK install
+pip install -e .
+
+# Recommended SDK install for full paper-generation features
+pip install -e ".[docling,images]"
+```
+
+The SDK runs in-process and does not require the FastAPI server. The recommended
+`docling,images` extras add PDF full-text analysis and image-generation support
+used by richer planning, reference analysis, exemplar analysis, and visual assets.
+
+2. Copy the example config and fill in your API keys:
+
+```bash
+cp examples/config.example.yaml configs/dev.yaml
+# Edit configs/dev.yaml — replace YOUR_API_KEY with real keys
+```
+
+3. Set the config path (or create a `.env` file):
+
+```bash
+export AGENT_CONFIG_PATH=./configs/dev.yaml
+```
+
+4. Use from Python:
+
+```python
+import asyncio
+from easypaper import EasyPaper, PaperMetaData
+
+async def main():
+    ep = EasyPaper(config_path="configs/dev.yaml")
+    result = await ep.generate(PaperMetaData(
+        title="My Paper",
+        idea_hypothesis="...",
+        method="...",
+        data="...",
+        experiments="...",
+        # Use real BibTeX entries or citation strings for actual generation.
+        references=["@article{example2026,title={Example Paper},year={2026}}"],
+    ))
+    print(f"Status: {result.status}, Words: {result.total_word_count}")
+
+asyncio.run(main())
+```
+
+5. Or use streaming for progress updates:
+
+```python
+async for event in ep.generate_stream(metadata):
+    print(f"{event.get('phase', '')}: {event.get('message', '')}")
+```
+
+See [`examples/sdk_demo.py`](examples/sdk_demo.py) for a complete working example.
+Use [`examples/meta.json`](examples/meta.json) as a non-runnable schema template,
+and [`examples/template/meta.json`](examples/template/meta.json) as a self-contained
+runnable sample.
+
+## Server Mode
+
+To run as a FastAPI service (for external integrations):
+
+1. Install with server extras:
+
+```bash
+pip install -e ".[server]"
+```
+
+2. Start the server:
+
+```bash
+uvicorn src.main:app --reload --port 8000
+```
+
+3. Verify health:
+
+```bash
+curl http://localhost:8000/healthz
+```
+
+### Generate a Paper via API
+
+```bash
+curl -X POST http://localhost:8000/metadata/generate \
+  -H "Content-Type: application/json" \
+  -d @economist_example/metadata.json
+```
+
+### Generate via CLI
+
+```bash
+python scripts/generate_paper.py --input economist_example/metadata.json
+```
+
+## Optional Dependencies
+
+```bash
+pip install -e ".[docling]"        # Docling PDF parsing and full-text reference analysis
+pip install -e ".[images]"         # image-generation support
+pip install -e ".[docling,images]" # recommended SDK extras for richer generation
+pip install -e ".[vlm]"            # Claude VLM review support
+pip install -e ".[server]"         # FastAPI + uvicorn
+pip install -e ".[dev]"            # pytest, ipython, etc.
+```
+
+Use the same extras without `-e .` when installing the published package, for
+example `pip install "easypaper[docling,images]"`.
+
+Docling is not a separate backend service that must be started. It is an
+optional Python dependency that EasyPaper imports only when PDF parsing is used.
+If `tools.docling.enabled: true`, `exemplar.enabled: true` with PDF exemplars,
+or standalone SDK calls such as `EasyPaper.parse_pdf()` are used, install the
+Docling extra first. Server mode is separate and is needed only for FastAPI
+integrations.
+
+## Config
+
+The application loads configuration from `AGENT_CONFIG_PATH` (defaults to `./configs/dev.yaml`).
+You can also set this variable in a `.env` file at the project root.
+
+See `configs/example.yaml` for a fully commented configuration template. Each agent entry defines
+its model and optional agent-specific settings.
+
+Key fields per agent:
+- `model_name` — LLM model identifier
+- `api_key` — API key for the model provider
+- `base_url` — API endpoint URL
+
+Additional top-level sections:
+- `skills` — skills system toggle and active skill list
+- `tools` — ReAct tool configuration (citation validation, paper search, etc.)
+- `vlm_service` — shared VLM provider for visual review (supports OpenAI-compatible and Claude)
+
+## Service Endpoints (Server Mode)
+
+Core generation:
+- `POST /metadata/generate` — generate a paper from `PaperGenerationRequest`
+- `POST /metadata/generate/stream` — generate with SSE progress events
+- `POST /metadata/generate/section` — generate or rewrite a single section
+
+Planning and resumable generation:
+- `POST /metadata/prepare-plan` — run planning and return a resumable metadata-agent `PlanResult`
+- `POST /metadata/generate-from-plan/stream` — resume generation from that `PlanResult`
+- streaming feedback, cancel, and resume routes are registered under `/metadata/*`
+
+Metadata utilities:
+- `POST /metadata/generate-from-folder` — synthesize `PaperMetaData` from a materials folder
+- `GET /metadata/schema` — inspect the request schema
+
+Discovery and health:
+- `GET /healthz` — health check
+- `GET /config` — current app config
+- `GET /list_agents` — list registered agents and their discovery metadata
+- Agent-specific routes are registered under `/agent/*`
+
+Docling utilities are also exposed by the server for PDF parsing and paper-analysis integrations.
+
+## Metadata Loading and Path Resolution
+
+For JSON files, prefer loading through the request model:
+
+```python
+import json
+from pathlib import Path
+from easypaper import EasyPaper, PaperGenerationRequest
+
+def metadata_relative_path(value: str, base_dir: Path) -> str:
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        return str(candidate)
+    return str((base_dir / candidate).resolve())
+
+metadata_path = Path("metadata.json").resolve()
+raw = json.loads(metadata_path.read_text(encoding="utf-8"))
+if not raw.get("materials_root"):
+    raw["materials_root"] = str(metadata_path.parent)
+if raw.get("template_path"):
+    raw["template_path"] = metadata_relative_path(raw["template_path"], metadata_path.parent)
+if (
+    isinstance(raw.get("code_repository"), dict)
+    and raw["code_repository"].get("type") == "local_dir"
+    and raw["code_repository"].get("path")
+):
+    raw["code_repository"]["path"] = metadata_relative_path(
+        raw["code_repository"]["path"],
+        metadata_path.parent,
+    )
+
+request = PaperGenerationRequest.model_validate(raw)
+metadata = request.to_metadata()
+options = {
+    "compile_pdf": request.compile_pdf,
+    "enable_review": request.enable_review,
+    "enable_vlm_review": request.enable_vlm_review,
+    "max_review_iterations": request.max_review_iterations,
+    "output_dir": request.output_dir,
+    "target_pages": request.target_pages,
+}
+
+result = await EasyPaper(config_path="configs/dev.yaml").generate(metadata, **options)
+```
+
+Use this explicit load-and-split pattern when turning request JSON into SDK
+arguments.
+
+Metadata should use relative paths where practical so examples and generated
+metadata remain portable. Runtime figure and table asset lookup uses
+`materials_root` first, then the current working directory. When loading a
+metadata file, helper scripts should set `materials_root` to the metadata file's
+parent directory if it is missing.
+
+`template_path` and local `code_repository.path` are operational paths; the
+current SDK does not resolve them through `materials_root`. File-loading helpers
+such as `examples/sdk_demo.py` normalize those fields relative to the metadata
+file parent before calling `EasyPaper.generate()`. `output_dir` is an optional
+runtime output setting and may be omitted.
+
+Review flags are distinct:
+- `enable_review` controls the text review/revision loop and defaults to `true`.
+- `enable_vlm_review` controls VLM/PDF visual review such as page-overflow checks and defaults to `false`.
+
+## Repository Layout
+
+```
+.
+├── easypaper/          # Thin SDK package (public API)
+│   ├── __init__.py     # Re-exports: EasyPaper, PaperMetaData, EventType, ...
+│   └── client.py       # EasyPaper class: generate(), generate_stream(), generate_metadata_from_folder()
+├── src/                # Core implementation (agents, config, skills)
+│   ├── main.py         # FastAPI app (server mode entrypoint)
+│   ├── agents/         # Agent implementations (metadata, writer, reviewer, ...)
+│   ├── config/         # YAML config loading and schema
+│   └── skills/         # Skill loader, registry, and router
+├── configs/            # YAML configs for agents and models
+├── skills/             # Built-in YAML skill definitions (venues, writing, reviewing)
+├── scripts/            # CLI utilities and demos
+├── examples/           # SDK usage examples
+├── plugins/            # Claude Code plugin assets
+├── tests/              # Test suite
+└── pyproject.toml      # Package metadata (name: easypaper)
+```

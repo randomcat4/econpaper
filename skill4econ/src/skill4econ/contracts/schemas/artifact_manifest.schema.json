@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "skill4econ artifact_manifest.json",
+  "type": "object",
+  "required": ["workflow", "run_id", "status", "artifacts", "missing_required_artifacts"],
+  "properties": {
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "type", "role", "required", "producer", "exists"]
+      }
+    }
+  }
+}

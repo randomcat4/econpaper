@@ -1,0 +1,11 @@
+{
+  "fixture": "weak_pretrend_only_two_pre",
+  "spec": {
+    "id": "unit",
+    "time": "year",
+    "y": "y",
+    "treat": "treat",
+    "gvar": "gvar"
+  },
+  "expected_design_type": "staggered_adoption"
+}

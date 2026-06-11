@@ -1,0 +1,12 @@
+data: skill4econ/examples/mini_panel/spatial_w_sensitivity_panel.csv
+weights: skill4econ/examples/mini_panel/w_sensitivity_w1.csv
+weight_paths:
+  - skill4econ/examples/mini_panel/w_sensitivity_w2.csv
+  - skill4econ/examples/mini_panel/w_sensitivity_w3.csv
+id: city
+time: year
+y: y
+treat: treat
+near_exposure_threshold: 0
+run_event_study: false
+output_dir: skill4econ/runs

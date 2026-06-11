@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skill4econ.local/schemas/skills/robustness_plan.schema.json",
+  "title": "Robustness Plan Skill Output",
+  "type": "object",
+  "description": "Schema for robustness_plan_generator.md outputs in applied econometrics. Guardrails: claim_gate.json; diagnostic_success; parser-only; interface-only; missing_dependency; official/latest; unsupported fallback estimators are not equivalent substitutes; ESG text risk is not fraud. Robustness checks cannot override failed design or claim gates; strong causal, structural, paper-ready, legal, audit-grade, or backend-certified claims need artifact support.",
+  "additionalProperties": false,
+  "required": ["skill_name", "user_question_summary", "research_domain", "robustness_plan"],
+  "properties": {
+    "skill_name": {"type": "string", "minLength": 1},
+    "user_question_summary": {"type": "string", "minLength": 1},
+    "research_domain": {"type": "string", "minLength": 1},
+    "research_brief": {"$ref": "#/$defs/research_brief"},
+    "robustness_plan": {"$ref": "#/$defs/robustness_plan"},
+    "required_diagnostics": {"$ref": "#/$defs/diagnostic_array"},
+    "forbidden_claims": {"$ref": "#/$defs/claim_array"},
+    "claim_language": {"$ref": "#/$defs/claim_language"},
+    "uncertainty_notes": {"$ref": "#/$defs/string_array"},
+    "next_code_actions": {"$ref": "#/$defs/string_array"},
+    "scholarly_depth": {"$ref": "#/$defs/scholarly_depth"},
+    "not_recommended_methods": {"$ref": "#/$defs/method_array"}
+  },
+  "$defs": {
+    "robustness_plan": {
+      "type": "object",
+      "description": "Canonical plan; required_before_claim checks must pass before upgraded empirical language is used.",
+      "additionalProperties": false,
+      "required": ["required_before_claim", "high_priority", "medium_priority", "optional", "not_applicable", "missing_data_needed"],
+      "properties": {
+        "required_before_claim": {
+          "$ref": "#/$defs/check_array",
+          "description": "Checks that must pass before the main empirical, causal, structural, forecasting, ESG, or policy claim is made."
+        },
+        "high_priority": {
+          "$ref": "#/$defs/check_array",
+          "description": "First-order threats to identification, measurement, inference, sample construction, or model dependence."
+        },
+        "medium_priority": {
+          "$ref": "#/$defs/check_array",
+          "description": "Useful checks that strengthen interpretation but may not block cautious reporting alone."
+        },
+        "optional": {
+          "$ref": "#/$defs/check_array",
+          "description": "Nice-to-have sensitivity checks, extensions, or alternative presentations."
+        },
+        "not_applicable": {
+          "$ref": "#/$defs/check_array",
+          "description": "Checks explicitly irrelevant to this design or data, with reasons."
+        },
+        "missing_data_needed": {
+          "$ref": "#/$defs/check_array",
+          "description": "Data, metadata, code artifacts, logs, or documentation needed before checks can run."
+        }
+      }
+    },
+    "check_array": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/robustness_check"}
+    },
+    "robustness_check": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "reason"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Why this check matters for confounding, pre-trends, exclusion, manipulation, serial correlation, measurement error, missingness, weak instruments, spillovers, leverage, or text-label validity."
+            },
+            "artifact_needed": {"$ref": "#/$defs/string_or_array"},
+            "blocks_claim_if_missing": {"type": "boolean"},
+            "related_risks": {"$ref": "#/$defs/string_array"},
+            "diagnostic_success": {"type": "string"},
+            "claim_gate_dependency": {"type": "string"}
+          }
+        }
+      ]
+    },
+    "diagnostic_array": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {"$ref": "#/$defs/diagnostic_item"}
+        ]
+      }
+    },
+    "diagnostic_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "status": {"enum": ["not_started", "pending", "passed", "failed", "unknown", "not_applicable", "missing_dependency"]},
+        "artifact_needed": {"$ref": "#/$defs/string_or_array"},
+        "blocks_claim_if_missing": {"type": "boolean"},
+        "diagnostic_success": {"type": "string"}
+      }
+    },
+    "claim_language": {
+      "type": "object",
+      "description": "Recommended wording discipline for supported, downgraded, and forbidden empirical claims.",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_claims": {"$ref": "#/$defs/claim_array"},
+        "downgraded_claims": {"$ref": "#/$defs/claim_array"},
+        "forbidden_claims": {"$ref": "#/$defs/claim_array"},
+        "safe_summary_paragraph": {"type": "string"},
+        "reviewer_warning_paragraph": {"type": "string"}
+      }
+    },
+    "claim_array": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/claim_item"}
+    },
+    "claim_item": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["claim"],
+          "properties": {
+            "claim": {"type": "string", "minLength": 1},
+            "status": {"enum": ["allowed", "downgraded", "forbidden", "blocked", "unknown"]},
+            "reason": {"type": "string"},
+            "artifact_needed": {"$ref": "#/$defs/string_or_array"},
+            "blocking_reasons": {"$ref": "#/$defs/string_array"}
+          }
+        }
+      ]
+    },
+    "research_brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "question": {"type": "string", "minLength": 1},
+        "estimand": {"type": "string"},
+        "identification_strategy": {"type": "string"},
+        "data_context": {"type": "string"},
+        "artifact_status": {"type": "string"},
+        "main_risks": {"$ref": "#/$defs/string_array"}
+      }
+    },
+    "scholarly_depth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {"enum": ["brief", "standard", "paper_ready", "technical_appendix"]},
+        "literature_hooks": {"$ref": "#/$defs/string_array"},
+        "limitations": {"$ref": "#/$defs/string_array"}
+      }
+    },
+    "method_array": {
+      "type": "array",
+      "description": "Methods or shortcuts not recommended for this setting.",
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["method", "reason"],
+            "properties": {
+              "method": {"type": "string", "minLength": 1},
+              "reason": {"type": "string", "minLength": 1}
+            }
+          }
+        ]
+      }
+    },
+    "string_array": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "string_or_array": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"$ref": "#/$defs/string_array"}
+      ]
+    }
+  }
+}

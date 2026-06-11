@@ -1,0 +1,11 @@
+data: skill4econ/examples/mini_panel/staggered_panel.csv
+id: firm_id
+time: year
+y: y
+x: []
+gvar: gvar
+method: reg
+control_group: never_treated
+cluster: firm_id
+event_window: [-2, 2]
+output_dir: skill4econ/runs

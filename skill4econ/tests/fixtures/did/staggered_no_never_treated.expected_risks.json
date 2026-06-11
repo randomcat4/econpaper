@@ -1,0 +1,6 @@
+{
+  "fixture": "staggered_no_never_treated",
+  "expected_risks": [
+    "NO_NEVER_TREATED"
+  ]
+}

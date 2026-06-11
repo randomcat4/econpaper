@@ -1,0 +1,19 @@
+{
+  "version": "econ-finance-artifact-manifest/v1",
+  "materials_root": "examples/econ/artifacts",
+  "source_agent": "local_econ_analysis",
+  "figures": [
+    {
+      "id": "fig:event_study_main",
+      "title": "Event Study Estimates",
+      "path": "figures/event_study_main.pdf",
+      "section": "results",
+      "caption": "Event-study estimates around state minimum wage changes.",
+      "semantic_role": "result_figure",
+      "target_type": "data_visualization",
+      "data_hash": "sha256:placeholder",
+      "code_hash": "sha256:placeholder"
+    }
+  ],
+  "tables": []
+}

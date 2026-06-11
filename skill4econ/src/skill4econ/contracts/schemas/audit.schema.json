@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "skill4econ audit.json",
+  "type": "object",
+  "required": ["status", "method", "engine", "state", "messages"],
+  "properties": {
+    "status": {"type": "string"},
+    "messages": {"type": "array"}
+  }
+}
