@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import csv
 import hashlib
@@ -53,7 +53,7 @@ def read_spec(path: Path | None) -> dict[str, Any]:
             import yaml
         except Exception as exc:  # pragma: no cover - depends on environment
             raise Skill4EconError(
-                "YAML specs require PyYAML. Use JSON or run in the EvoScientist env."
+                "YAML specs require PyYAML. Use JSON or run in the econpaper env."
             ) from exc
         data = yaml.safe_load(text) or {}
     if not isinstance(data, dict):

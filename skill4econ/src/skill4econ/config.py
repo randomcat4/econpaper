@@ -1,4 +1,4 @@
-"""Configuration and backend discovery for skill4econ.
+﻿"""Configuration and backend discovery for skill4econ.
 
 Resolves external dependencies (Stata executable, optional DEA backend path)
 through a chain of sources, from most specific to most general:
@@ -188,7 +188,7 @@ def resolve_dea_backend(spec: dict[str, Any] | None = None) -> tuple[Path | None
     """Return (path, source) for an external DEA backend override.
 
     The vendored backend under skill4econ.backends.dea is the default. An
-    override is only useful if the user has a customized fork and wants to
+    override is only useful if the user has a customized implementation and wants to
     keep using it.
     """
     spec_value = _from_spec(spec, "dea", "backend_path") or _from_spec(spec, "dea_backend_path")

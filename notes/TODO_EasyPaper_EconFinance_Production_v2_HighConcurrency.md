@@ -1,4 +1,4 @@
-# TODO_EasyPaper_EconFinance_Production_v2_HighConcurrency
+﻿# TODO_EasyPaper_EconFinance_Production_v2_HighConcurrency
 
 版本：v2 / Production 高并发施工版  
 日期：2026-06-10  
@@ -18,13 +18,13 @@
 ### 本地路径与分支
 
 ```powershell
-# EasyPaper fork
-cd D:/myproject/EvoScientist/competitor_repos/easypaper-source
-git checkout evo/econ-finance-tier1
+# EasyPaper-derived layer
+cd D:/myproject/econpaper/EasyPaper
+git checkout main
 git rev-parse --short HEAD   # 期望 latest: 63ba82c
 
 # skill4econ repo
-cd D:/myproject/skill4econ
+cd D:/myproject/econpaper/skill4econ
 git checkout codex/organize-skill4econ-easypaper
 git rev-parse --short HEAD   # 期望 latest: 593f329
 ```
@@ -33,9 +33,9 @@ git rev-parse --short HEAD   # 期望 latest: 593f329
 
 | 仓库/目录 | 职责 | 禁止事项 |
 |---|---|---|
-| `D:/myproject/skill4econ` | 计量后端、wrapper、manifest/audit/model_table/reviewer risk/run status contract、backend discovery、validation reports | 不在这里写 EasyPaper 的生成流程；不把缺失依赖的 adapter 伪装成成功结果 |
-| `D:/myproject/EvoScientist/competitor_repos/easypaper-source` | 多智能体论文生成、planner/writer/reviewer/typesetter、econ/finance metadata、file-backed artifacts、paper narrative bridge | 不实现 OLS/DID/IV/RDD/ML/空间/DEA 等计量算法；不自主生成经验结果图 |
-| `D:/myproject/skill4econ/integrations/easypaper-econ-finance` | EasyPaper fork 的 integration snapshot，用于 skill4econ PR 展示和交付 | 不作为夜间多人直接主开发目录；最终从 EasyPaper fork 安全同步 |
+| `D:/myproject/econpaper/skill4econ` | 计量后端、wrapper、manifest/audit/model_table/reviewer risk/run status contract、backend discovery、validation reports | 不在这里写 EasyPaper 的生成流程；不把缺失依赖的 adapter 伪装成成功结果 |
+| `D:/myproject/econpaper/EasyPaper` | 多智能体论文生成、planner/writer/reviewer/typesetter、econ/finance metadata、file-backed artifacts、paper narrative bridge | 不实现 OLS/DID/IV/RDD/ML/空间/DEA 等计量算法；不自主生成经验结果图 |
+| `D:/myproject/econpaper/skill4econ/integrations/easypaper-econ-finance` | EasyPaper-derived layer 的 integration snapshot，用于 skill4econ PR 展示和交付 | 不作为夜间多人直接主开发目录；最终从 EasyPaper-derived layer 安全同步 |
 
 ---
 
@@ -117,7 +117,7 @@ git rev-parse --short HEAD   # 期望 latest: 593f329
 
 | 角色 | 做什么 | 不做什么 | 交付 |
 |---|---|---|---|
-| Local code fork agents | 改代码、写测试、跑 pytest、提交 commits | 不做 live web 文献判断；不凭直觉写顶刊规则 | 小粒度 commits + test logs |
+| Local code agents | 改代码、写测试、跑 pytest、提交 commits | 不做 live web 文献判断；不凭直觉写顶刊规则 | 小粒度 commits + test logs |
 | skill4econ agents | 对接/导出 manifest、补 docs/contracts、跑 smoke | 不改 EasyPaper 生成核心 | contract + adapter + fixture |
 | ChatGPT 网页版 / live-web 老哥 | 顶层计量判断、论文质量、reviewer attack、top-journal risk、术语降级 | 不直接改代码；不声称读过本地未提供文件 | review memo + red-flag list |
 | Merge captain | 串联分支、解决冲突、跑 release gate、同步 integration snapshot | 不抢各 Agent 写入边界 | final branch + PR notes |
@@ -155,17 +155,17 @@ _handoff/
 ### 3.3 推荐 worktree
 
 ```powershell
-# EasyPaper fork worktrees
-cd D:/myproject/EvoScientist/competitor_repos/easypaper-source
+# EasyPaper-derived layer worktrees
+cd D:/myproject/econpaper/EasyPaper
 git status --short
-git worktree add -b agent/A-contracts D:/myproject/worktrees/easypaper-A evo/econ-finance-tier1
-git worktree add -b agent/B-ingest    D:/myproject/worktrees/easypaper-B evo/econ-finance-tier1
-git worktree add -b agent/C-claim     D:/myproject/worktrees/easypaper-C evo/econ-finance-tier1
-git worktree add -b agent/D-narrative D:/myproject/worktrees/easypaper-D evo/econ-finance-tier1
-git worktree add -b agent/E-quality   D:/myproject/worktrees/easypaper-E evo/econ-finance-tier1
+git worktree add -b agent/A-contracts D:/myproject/worktrees/easypaper-A main
+git worktree add -b agent/B-ingest    D:/myproject/worktrees/easypaper-B main
+git worktree add -b agent/C-claim     D:/myproject/worktrees/easypaper-C main
+git worktree add -b agent/D-narrative D:/myproject/worktrees/easypaper-D main
+git worktree add -b agent/E-quality   D:/myproject/worktrees/easypaper-E main
 
 # skill4econ worktrees
-cd D:/myproject/skill4econ
+cd D:/myproject/econpaper/skill4econ
 git status --short
 git worktree add -b agent/F-skill4econ-export D:/myproject/worktrees/skill4econ-F codex/organize-skill4econ-easypaper
 git worktree add -b agent/G-finance-gaps      D:/myproject/worktrees/skill4econ-G codex/organize-skill4econ-easypaper
@@ -209,8 +209,8 @@ git worktree add -b agent/G-finance-gaps      D:/myproject/worktrees/skill4econ-
 Merge captain 主导；所有 Agent 只读参与。
 
 **文件/模块**  
-- `D:/myproject/EvoScientist/competitor_repos/easypaper-source`
-- `D:/myproject/skill4econ`
+- `D:/myproject/econpaper/EasyPaper`
+- `D:/myproject/econpaper/skill4econ`
 - 新增/更新：`_handoff/merge_log.md`、`_handoff/release_gate.md`
 
 **具体改动**  
@@ -224,7 +224,7 @@ Merge captain 主导；所有 Agent 只读参与。
 
 ```powershell
 # EasyPaper
-cd D:/myproject/EvoScientist/competitor_repos/easypaper-source
+cd D:/myproject/econpaper/EasyPaper
 $env:PYTHONUTF8='1'
 $env:PYTHONIOENCODING='utf-8'
 git rev-parse --short HEAD
@@ -241,7 +241,7 @@ python -m pytest `
 python scripts/run_econ_paper.py examples/econ/aer_minimal_request.yaml --out outputs/aer_minimal_baseline --mock-llm --no-pdf
 
 # skill4econ
-cd D:/myproject/skill4econ
+cd D:/myproject/econpaper/skill4econ
 git rev-parse --short HEAD
 git status --short
 conda run -n base python -m skill4econ.cli list
@@ -391,7 +391,7 @@ Agent F：skill4econ backend/export owner。
 **测试/命令**
 
 ```powershell
-cd D:/myproject/skill4econ
+cd D:/myproject/econpaper/skill4econ
 conda run -n base python -m pytest tests/test_easypaper_manifest_export.py -q
 conda run -n base python -m skill4econ.cli smoke --suite backend-contract --strict
 
@@ -458,7 +458,7 @@ Agent B：EasyPaper ingest owner。
 **测试/命令**
 
 ```powershell
-cd D:/myproject/EvoScientist/competitor_repos/easypaper-source
+cd D:/myproject/econpaper/EasyPaper
 python -m pytest `
   tests/test_artifact_path_validation.py `
   tests/test_easypaper_ingests_skill4econ_bundle.py `
@@ -1296,25 +1296,25 @@ conda run -n base python -m skill4econ.cli smoke --suite backend-contract --stri
 ### P16 — PR Packaging + Integration Snapshot Sync
 
 **目标**  
-把 EasyPaper fork 的最终代码安全同步到 skill4econ integration 子目录，准备 PR，避免 `.git`、outputs、secrets、cache 进入 snapshot。
+把 EasyPaper-derived layer 的最终代码安全同步到 skill4econ integration 子目录，准备 PR，避免 `.git`、outputs、secrets、cache 进入 snapshot。
 
 **Owner / Agent role**  
 Merge captain。
 
 **文件/模块**  
-- `D:/myproject/EvoScientist/competitor_repos/easypaper-source`
-- `D:/myproject/skill4econ/integrations/easypaper-econ-finance`
-- `D:/myproject/skill4econ/README.md`
-- `D:/myproject/skill4econ/docs/REPO_STRUCTURE.md`
-- `D:/myproject/skill4econ/integrations/easypaper-econ-finance/README_SKILL4ECON_INTEGRATION.md`
-- `D:/myproject/skill4econ/integrations/easypaper-econ-finance/CODEX_TASKS.md`
+- `D:/myproject/econpaper/EasyPaper`
+- `D:/myproject/econpaper/skill4econ/integrations/easypaper-econ-finance`
+- `D:/myproject/econpaper/skill4econ/README.md`
+- `D:/myproject/econpaper/skill4econ/docs/REPO_STRUCTURE.md`
+- `D:/myproject/econpaper/skill4econ/integrations/easypaper-econ-finance/README_SKILL4ECON_INTEGRATION.md`
+- `D:/myproject/econpaper/skill4econ/integrations/easypaper-econ-finance/CODEX_TASKS.md`
 
 **具体改动**  
-1. 在 EasyPaper fork 完成 merge 后打 tag/记录 commit。
+1. 在 EasyPaper-derived layer 完成 merge 后打 tag/记录 commit。
 2. 用 dry-run 比较 snapshot：
    ```powershell
-   robocopy D:/myproject/EvoScientist/competitor_repos/easypaper-source `
-     D:/myproject/skill4econ/integrations/easypaper-econ-finance `
+   robocopy D:/myproject/econpaper/EasyPaper `
+     D:/myproject/econpaper/skill4econ/integrations/easypaper-econ-finance `
      /MIR /L `
      /XD .git .venv venv env outputs .pytest_cache __pycache__ .mypy_cache .ruff_cache `
      /XF .env *.pyc *.pyo
@@ -1322,7 +1322,7 @@ Merge captain。
 3. 人工确认 dry-run 后再执行无 `/L`。
 4. 同步后在 skill4econ 根目录跑：
    ```powershell
-   cd D:/myproject/skill4econ
+   cd D:/myproject/econpaper/skill4econ
    git status --short
    conda run -n base python -m skill4econ.cli smoke --suite backend-contract --strict
    cd integrations/easypaper-econ-finance
@@ -1344,12 +1344,12 @@ Merge captain。
 **测试/命令**
 
 ```powershell
-cd D:/myproject/skill4econ
+cd D:/myproject/econpaper/skill4econ
 git diff --stat
 git diff --check
 conda run -n base python -m skill4econ.cli smoke --suite backend-contract --strict
 
-cd D:/myproject/skill4econ/integrations/easypaper-econ-finance
+cd D:/myproject/econpaper/skill4econ/integrations/easypaper-econ-finance
 python -m pytest -m "not live_llm and not latex and not slow" -q
 python scripts/run_econ_paper.py examples/econ/aer_minimal_request.yaml --out outputs/aer_minimal_snapshot --mock-llm --no-pdf
 ```
@@ -1362,7 +1362,7 @@ python scripts/run_econ_paper.py examples/econ/aer_minimal_request.yaml --out ou
 
 **风险**  
 - `robocopy /MIR` 可能删除目标文件；必须先 `/L` dry-run 并检查。
-- snapshot 中有路径引用回 EasyPaper fork；必须保持 portable relative paths。
+- snapshot 中有路径引用回 EasyPaper-derived layer；必须保持 portable relative paths。
 
 **commit 名**  
 `integrations: sync easypaper econ finance production v2 snapshot`
@@ -1405,12 +1405,12 @@ Merge captain + live-web 老哥 + all Agent 签字。
 
 ```powershell
 # EasyPaper final
-cd D:/myproject/EvoScientist/competitor_repos/easypaper-source
+cd D:/myproject/econpaper/EasyPaper
 python -m pytest -m "not live_llm and not latex and not slow" -q
 python scripts/run_econ_paper.py examples/econ/aer_minimal_request.yaml --out outputs/final_aer --mock-llm --no-pdf --strict-artifacts --claim-gate-strict
 
 # skill4econ final
-cd D:/myproject/skill4econ
+cd D:/myproject/econpaper/skill4econ
 conda run -n base python -m skill4econ.cli smoke --suite backend-contract --strict
 git diff --check
 ```
@@ -1524,8 +1524,8 @@ git diff --check
 
 ```powershell
 # EasyPaper main merge
-cd D:/myproject/EvoScientist/competitor_repos/easypaper-source
-git checkout evo/econ-finance-tier1
+cd D:/myproject/econpaper/EasyPaper
+git checkout main
 git pull --ff-only  # 如有 remote
 git merge --no-ff agent/A-contracts
 python -m pytest tests/test_artifact_manifest_v2_contract.py tests/test_econ_capability_registry.py -q
@@ -1757,7 +1757,7 @@ conda run -n base python -m skill4econ.cli smoke --suite backend-contract --stri
 1. P10/P11/P12 方法路由 fixture 全覆盖。
 2. AER/QJE/JFE mock examples 都能生成非伪造草稿。
 3. reviewer_attack_pack 可直接给作者当 checklist。
-4. integration snapshot 与 EasyPaper fork 完全同步且可复现。
+4. integration snapshot 与 EasyPaper-derived layer 完全同步且可复现。
 5. live-web 老哥签过 top-journal risk，无 blocker。
 
 ---

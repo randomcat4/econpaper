@@ -1,4 +1,4 @@
-# Codex Tasks for the Econ/Finance Fork
+﻿# Codex Tasks for the Econ/Finance Workspace
 
 ## Common Commands
 
@@ -58,6 +58,6 @@ main.tex
 2. Before editing, run the related failing or targeted test when practical.
 3. After editing, run the targeted test and a nearby regression subset.
 4. Do not run live LLM calls in tests.
-5. Do not introduce EvoScientist dependencies into this EasyPaper fork.
+5. Do not introduce econpaper dependencies into this EasyPaper-derived layer.
 6. Do not unlock autonomous empirical result figures.
 7. Do not commit API keys. Runner keys must come from CLI args or environment variables and saved configs must be redacted.

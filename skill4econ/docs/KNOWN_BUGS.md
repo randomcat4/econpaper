@@ -1,4 +1,4 @@
-# Known Bugs And Gaps
+﻿# Known Bugs And Gaps
 
 Last updated: 2026-06-06.
 
@@ -18,7 +18,7 @@ just to close these items unless the user explicitly authorizes that work.
   and records `BACKEND_UNAVAILABLE`; do not install R packages automatically.
 - SAR/SEM/SDM support now has an opt-in live certification harness:
   `live_backend_certification`. On 2026-06-06,
-  `D:\myproject\EvoScientist\skill4econ\runs\live_backend_certification\20260606T000516Z`
+  `D:\myproject\econpaper\skill4econ\runs\live_backend_certification\20260606T000516Z`
   successfully ran Stata `spxtregress` for a 3-by-3 W grid across SAR, SEM,
   and SDM and parsed `estat impact` direct/indirect/total rows for SAR and
   SDM. This certifies the local Stata backend path, not the
@@ -96,7 +96,7 @@ just to close these items unless the user explicitly authorizes that work.
   missing direct/indirect/total impact components.
 - Live R/Stata certification is partial. Stata `spxtregress` and Stata
   `ppmlhdfe` have live successful rows in
-  `D:\myproject\EvoScientist\skill4econ\runs\live_backend_certification\20260606T000516Z`.
+  `D:\myproject\econpaper\skill4econ\runs\live_backend_certification\20260606T000516Z`.
   R `spdep`/`splm`/`spatialreg` and Stata `xsmle` are still dependency-gated
   and unavailable.
 - Stata preflight on 2026-06-06 found `spxtregress_rc=0`, but
@@ -105,7 +105,7 @@ just to close these items unless the user explicitly authorizes that work.
   `xsmle` is installed on this machine.
 - `flagship_slow_matrix` now exists as an opt-in 3 flagship workflow by
   3 case by Stata/R backend-profile harness. The first full run was
-  `D:\myproject\EvoScientist\skill4econ\runs\flagship_slow_matrix\20260606T002537Z`.
+  `D:\myproject\econpaper\skill4econ\runs\flagship_slow_matrix\20260606T002537Z`.
   Stata workflow cells ran; R cells were recorded as `BACKEND_UNAVAILABLE`.
   The `spatial_spillover_run/alternate_w` case deliberately exposes a
   rank-deficient reduced-form design and must stay not-paper-ready rather than

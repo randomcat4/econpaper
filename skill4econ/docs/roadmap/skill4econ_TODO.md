@@ -1,7 +1,7 @@
-# skill4econ TODO.md — 给 Codex 分次执行版
+﻿# skill4econ TODO.md — 给 Codex 分次执行版
 
-> 目标：让 Codex / 小模型 agent 能按批次把 `skill4econ` 的环境经济、ESG、绿色金融、能源/碳排放 workflow 做深、做稳、做完。  
-> 原则：不要横向堆模型；优先补硬诊断、估计器选择、adapter、artifact contract、smoke test、reviewer risk。  
+> 目标：让 Codex / 小模型 agent 能按批次把 `skill4econ` 的环境经济、ESG、绿色金融、能源/碳排放 workflow 做深、做稳、做完。
+> 原则：不要横向堆模型；优先补硬诊断、估计器选择、adapter、artifact contract、smoke test、reviewer risk。
 > 兼容要求：不要破坏已有通过本地 smoke 的 workflow：`did_paper_run`、`psm_did_policy_run`、`spatial_spillover_run`、`mechanism_threshold_run`、`efficiency_frontier_run`。
 
 ---
@@ -127,8 +127,8 @@ skill4econ/
 
 ### M0.1 `reviewer_risk.json` 全局 schema
 
-**优先级：P0**  
-**依赖：无**  
+**优先级：P0**
+**依赖：无**
 **目标：所有 workflow 都能输出审稿风险。**
 
 #### TODO
@@ -234,7 +234,7 @@ DEA/GTFP：
 
 ### M0.2 `artifact_manifest.json`
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.1**
 
 #### TODO
@@ -281,7 +281,7 @@ DEA/GTFP：
 
 ### M0.3 `data_contract.yaml` 标准化
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：无**
 
 #### TODO
@@ -342,7 +342,7 @@ policy:
 
 ### M0.4 backend availability checker
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：无**
 
 #### TODO
@@ -385,7 +385,7 @@ policy:
 
 ### M1.1 DID design detector
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.3**
 
 #### TODO
@@ -446,7 +446,7 @@ policy:
 
 ### M1.2 estimator registry + router
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M1.1、M0.4**
 
 #### TODO
@@ -524,7 +524,7 @@ did:
 
 ### M1.3 Stata/R modern DID adapters
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M1.2、M0.4**
 
 #### TODO：Stata adapters
@@ -629,7 +629,7 @@ did:
 
 ### M1.4 DID estimator comparison table
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M1.3**
 
 #### TODO
@@ -667,7 +667,7 @@ did:
 
 ### M1.5 DID smoke fixtures
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M1.1-M1.4**
 
 #### TODO
@@ -704,7 +704,7 @@ did:
 
 ### M2.1 propensity score overlap diagnostics
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.3、M0.1**
 
 #### TODO
@@ -737,7 +737,7 @@ did:
 
 ### M2.2 balance table + Love plot
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M2.1**
 
 #### TODO
@@ -769,7 +769,7 @@ did:
 
 ### M2.3 weight diagnostics
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M2.1**
 
 #### TODO
@@ -800,7 +800,7 @@ did:
 
 ### M2.4 PSM sensitivity grid
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M2.1、M2.2**
 
 #### TODO
@@ -832,7 +832,7 @@ did:
 
 ### M2.5 DRDID integration as core adjusted DID
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M1.3、M2.1-M2.3**
 
 #### TODO
@@ -864,7 +864,7 @@ did:
 
 ### M2.6 PSM/IPW smoke fixtures
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M2.1-M2.5**
 
 #### TODO
@@ -891,7 +891,7 @@ did:
 
 ### M3.1 spatial weights factory
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.3**
 
 #### TODO
@@ -954,7 +954,7 @@ did:
 
 ### M3.2 W audit report
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M3.1**
 
 #### TODO
@@ -987,7 +987,7 @@ did:
 
 ### M3.3 Moran / LISA spatial preflight
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M3.1、M3.2**
 
 #### TODO
@@ -1022,7 +1022,7 @@ did:
 
 ### M3.4 spatial exposure DID
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M3.1-M3.3、M1.1**
 
 #### TODO
@@ -1071,7 +1071,7 @@ did:
 
 ### M3.5 SDM/SAR/SEM spatial panel adapters
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M3.1-M3.3、M0.4**
 
 #### TODO
@@ -1143,7 +1143,7 @@ Common output:
 
 ### M3.6 spatial standard errors / Conley adapter
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M3.1、M0.4**
 
 #### TODO
@@ -1180,7 +1180,7 @@ Common output:
 
 ### M3.7 W sensitivity grid
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M3.1-M3.5**
 
 #### TODO
@@ -1210,7 +1210,7 @@ Common output:
 
 ### M3.8 spatial smoke fixtures
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M3.1-M3.7**
 
 #### TODO
@@ -1237,7 +1237,7 @@ Common output:
 
 ### M4.1 中国环境政策试点库
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.3**
 
 #### TODO
@@ -1292,12 +1292,12 @@ Common output:
 
 #### 材料入口
 
-- 低碳试点/碳交易试点官方材料：  
+- 低碳试点/碳交易试点官方材料：
   - https://www.ndrc.gov.cn/xwdt/ztzl/2021qgjnxcz/bmjncx/202108/t20210827_1294892.html
   - https://www.ndrc.gov.cn/xxgk/zcfb/tz/201201/t20120113_964370.html
-- 绿色金融改革创新试验区官方材料：  
+- 绿色金融改革创新试验区官方材料：
   - https://wzdt.pbc.gov.cn/rmyh/2025-07/21/article_2025072110012382105.html
-- 中央生态环境保护督察官方材料：  
+- 中央生态环境保护督察官方材料：
   - https://www.mee.gov.cn/ywgz/zysthjbhdc/dcjl/202302/t20230220_1016786.shtml
   - https://www.mee.gov.cn/ywgz/zysthjbhdc/dczg/202310/t20231010_1042707.shtml
 
@@ -1305,7 +1305,7 @@ Common output:
 
 ### M4.2 green patent outcome pipeline
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.3**
 
 #### TODO
@@ -1365,7 +1365,7 @@ Common output:
 
 ### M4.3 firm green finance / ESG panel template
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M1、M2、M4.1、M4.2**
 
 #### TODO
@@ -1447,7 +1447,7 @@ firm_panel:
 
 ### M4.4 China environment data source guide
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：无**
 
 #### TODO
@@ -1499,7 +1499,7 @@ firm_panel:
 
 ### M5.1 DEA/GTFP data schema
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.3、M0.1**
 
 #### TODO
@@ -1550,7 +1550,7 @@ frontier:
 
 ### M5.2 DEA/R adapters
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M5.1、M0.4**
 
 #### TODO
@@ -1591,7 +1591,7 @@ frontier:
 
 ### M5.3 Stata GTFP / undesirable output adapters
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M5.1、M0.4**
 
 #### TODO
@@ -1625,7 +1625,7 @@ frontier:
 
 ### M5.4 variable sensitivity grid
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M5.1-M5.3**
 
 #### TODO
@@ -1657,7 +1657,7 @@ frontier:
 
 ### M5.5 DEA second-stage warning and bridge to DID/spatial
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M5.1-M5.4、M1、M3**
 
 #### TODO
@@ -1683,7 +1683,7 @@ frontier:
 
 ### M5.6 DEA smoke fixtures
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M5.1-M5.5**
 
 #### TODO
@@ -1712,7 +1712,7 @@ frontier:
 
 ### M6.1 mechanism timing validator
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.3、M0.1**
 
 #### TODO
@@ -1750,7 +1750,7 @@ mechanism:
 
 ### M6.2 mechanism evidence workflow
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M6.1、M1**
 
 #### TODO
@@ -1799,7 +1799,7 @@ mechanism:
 
 ### M6.3 causal mediation adapters
 
-**优先级：P2**  
+**优先级：P2**
 **依赖：M6.2、M0.4**
 
 #### TODO
@@ -1831,7 +1831,7 @@ mechanism:
 
 ### M6.4 threshold panel adapter
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M0.4**
 
 #### TODO
@@ -1872,7 +1872,7 @@ mechanism:
 
 ### M6.5 quantile heterogeneity adapters
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M0.4**
 
 #### TODO
@@ -1909,7 +1909,7 @@ mechanism:
 
 ### M6.6 mechanism/threshold smoke fixtures
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M6.1-M6.5**
 
 #### TODO
@@ -1935,7 +1935,7 @@ mechanism:
 
 ### M7.1 replication zoo scaffold
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M1-M6 可逐步接入**
 
 #### TODO
@@ -1997,7 +1997,7 @@ expected_reviewer_risk.json
 
 ### M7.2 paper artifact generator
 
-**优先级：P1**  
+**优先级：P1**
 **依赖：M0.2、M1-M6**
 
 #### TODO
@@ -2030,7 +2030,7 @@ expected_reviewer_risk.json
 
 ### M8.1 必写 docs 文件
 
-**优先级：P0-P1**  
+**优先级：P0-P1**
 **依赖：对应模块**
 
 创建以下文档：
@@ -2070,7 +2070,7 @@ expected_reviewer_risk.json
 
 ### M9.1 Makefile / task runner
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：所有模块逐步接入**
 
 #### TODO
@@ -2118,7 +2118,7 @@ format:
 
 ### M9.2 run reproducibility log
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.2**
 
 #### TODO
@@ -2156,7 +2156,7 @@ format:
 
 ### M9.3 safe degradation
 
-**优先级：P0**  
+**优先级：P0**
 **依赖：M0.4**
 
 #### TODO
@@ -2415,8 +2415,8 @@ format:
 - 对小模型 agent 最有价值的是：明确 contract、明确禁止乱吹、明确何时跳过、明确下一步修复。
 # TODO.md — skill4econ repo-local 能力包加固计划
 
-> 目标：把 `D:/myproject/EvoScientist/skill4econ` 从“功能可跑 + smoke 通过”推进到“agent 可稳定调用、失败语义可信、论文审稿 artifact 可验证”的能力包。  
-> 使用方式：本文件直接放到仓库根目录 `TODO.md`。Codex 按 Milestone / Phase 分 PR 执行。每个 Phase 都必须有输入、输出、验收标准和 Definition of Done。  
+> 目标：把 `D:/myproject/econpaper/skill4econ` 从“功能可跑 + smoke 通过”推进到“agent 可稳定调用、失败语义可信、论文审稿 artifact 可验证”的能力包。
+> 使用方式：本文件直接放到仓库根目录 `TODO.md`。Codex 按 Milestone / Phase 分 PR 执行。每个 Phase 都必须有输入、输出、验收标准和 Definition of Done。
 > 总原则：**先加固 contract / artifact / failure semantics，再扩展模型。不要为了通过 smoke 降低断言。**
 
 ---
@@ -2426,7 +2426,7 @@ format:
 ### 0.1 仓库位置
 
 ```text
-D:/myproject/EvoScientist/skill4econ
+D:/myproject/econpaper/skill4econ
 ```
 
 所有路径默认相对仓库根目录。
@@ -2648,7 +2648,7 @@ docs/CODEX_RUNBOOK.md              # 新增
 ### 建议命令
 
 ```bash
-cd /d D:\myproject\EvoScientist\skill4econ
+cd /d D:\myproject\econpaper\skill4econ
 conda run -n base python -m skill4econ.cli list
 conda run -n base python -m pytest tests -q
 ```

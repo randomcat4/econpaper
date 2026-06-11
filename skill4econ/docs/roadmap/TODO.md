@@ -1,7 +1,7 @@
-# TODO.md — skill4econ repo-local 能力包加固计划
+﻿# TODO.md — skill4econ repo-local 能力包加固计划
 
-> 目标：把 `D:/myproject/EvoScientist/skill4econ` 从“功能可跑 + smoke 通过”推进到“agent 可稳定调用、失败语义可信、论文审稿 artifact 可验证”的能力包。  
-> 使用方式：本文件直接放到仓库根目录 `TODO.md`。Codex 按 Milestone / Phase 分 PR 执行。每个 Phase 都必须有输入、输出、验收标准和 Definition of Done。  
+> 目标：把 `D:/myproject/econpaper/skill4econ` 从“功能可跑 + smoke 通过”推进到“agent 可稳定调用、失败语义可信、论文审稿 artifact 可验证”的能力包。
+> 使用方式：本文件直接放到仓库根目录 `TODO.md`。Codex 按 Milestone / Phase 分 PR 执行。每个 Phase 都必须有输入、输出、验收标准和 Definition of Done。
 > 总原则：**先加固 contract / artifact / failure semantics，再扩展模型。不要为了通过 smoke 降低断言。**
 
 ---
@@ -11,7 +11,7 @@
 ### 0.1 仓库位置
 
 ```text
-D:/myproject/EvoScientist/skill4econ
+D:/myproject/econpaper/skill4econ
 ```
 
 所有路径默认相对仓库根目录。
@@ -233,7 +233,7 @@ docs/CODEX_RUNBOOK.md              # 新增
 ### 建议命令
 
 ```bash
-cd /d D:\myproject\EvoScientist\skill4econ
+cd /d D:\myproject\econpaper\skill4econ
 conda run -n base python -m skill4econ.cli list
 conda run -n base python -m pytest tests -q
 ```

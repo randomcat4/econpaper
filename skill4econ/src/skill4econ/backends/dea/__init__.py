@@ -1,7 +1,7 @@
-"""Vendored DEA / Super-SBM / Malmquist backend.
+﻿"""Vendored DEA / Super-SBM / Malmquist backend.
 
 Originally sourced from D:\\myproject\\dea_calculator (user-owned). Refactored
-into a function-call API so the EvoScientist agent can run efficiency
+into a function-call API so the econpaper agent can run efficiency
 calculations in-process without rewriting source files or shelling out.
 
 Public surface:

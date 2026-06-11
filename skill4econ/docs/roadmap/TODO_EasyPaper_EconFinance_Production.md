@@ -1,12 +1,12 @@
-# TODO_EasyPaper_EconFinance_Production.md
+﻿# TODO_EasyPaper_EconFinance_Production.md
 
-> 施工起点：`D:/myproject/EvoScientist/competitor_repos/easypaper-source`，branch `evo/econ-finance-tier1`，latest known commit `63ba82c feat: require provenance hashes for empirical artifacts`。
-> 相关整理分支：`D:/myproject/skill4econ`，branch `codex/organize-skill4econ-easypaper`，latest known commit `5d08808`。
+> 施工起点：`D:/myproject/econpaper/EasyPaper`，branch `main`，latest known commit `63ba82c feat: require provenance hashes for empirical artifacts`。
+> 相关整理分支：`D:/myproject/econpaper/skill4econ`，branch `codex/organize-skill4econ-easypaper`，latest known commit `5d08808`。
 > 当前状态：EasyPaper econ/finance 第一阶段 demo 已可 mock 跑通，但 fast suite 仍有 6 个 baseline failures；live LLM、PDF/LaTeX、引用可靠性、provenance/replication、release gate 均未达到 production。
 
 ## 施工总原则
 
-1. 不接 EvoScientist 主 agent 壳，不重写 EasyPaper agent 架构；只把 EasyPaper fork 打磨成正式经济学/金融论文草稿引擎。
+1. 不接 econpaper 主 agent 壳，不重写 EasyPaper agent 架构；只把 EasyPaper-derived layer 打磨成正式经济学/金融论文草稿引擎。
 2. empirical results 只能来自 file-backed tables/figures/artifact manifests；禁止 Dreamer、AI image、autonomous visualization 生成实证结果图。
 3. LLM 只能写作、组织、解释已给定证据；不得编造系数、样本量、p-value、显著性、数据来源、识别假设或参考文献。
 4. 所有生产输出必须可复现：输入、模型配置、manifest、hash、命令、日志、LaTeX 编译状态、人工风险清单都要落盘。
@@ -53,7 +53,7 @@ Production-ready 表示一次正式生成至少产出：
   - `python -m pytest -m "not live_llm and not latex and not slow" -q`
 - 验收标准：
   - fast suite 全绿；不再依赖缺失资产。
-  - 新增 config/prompt/skill 文件不是空壳，能解释当前 econ/finance fork 的最小使用方式。
+  - 新增 config/prompt/skill 文件不是空壳，能解释当前 econ/finance 独立项目的最小使用方式。
 - 风险：
   - 复制旧 EasyPaper canonical tree 可能带回 AI/ML 默认假设；需审查 wording。
 - 建议 commit 名：
@@ -63,21 +63,21 @@ Production-ready 表示一次正式生成至少产出：
 
 ### Task A2.1 修正 SKILL.md 运行目录和安装策略
 
-- 目标：避免从 `D:/myproject/EvoScientist` 运行 `python -m skill4econ.cli` 时解析到旧副本或找不到 package。
+- 目标：避免从 `D:/myproject/econpaper` 运行 `python -m skill4econ.cli` 时解析到旧副本或找不到 package。
 - 文件/模块：
-  - `D:/myproject/skill4econ/SKILL.md`
-  - `D:/myproject/skill4econ/README.md`
-  - 可新增：`D:/myproject/skill4econ/docs/INSTALL.md`
+  - `D:/myproject/econpaper/skill4econ/SKILL.md`
+  - `D:/myproject/econpaper/skill4econ/README.md`
+  - 可新增：`D:/myproject/econpaper/skill4econ/docs/INSTALL.md`
 - 具体改动：
-  - 将 Required Workflow 改成优先在 `D:/myproject/skill4econ` 根目录运行。
-  - 明确两种合法模式：`python -m pip install -e D:/myproject/skill4econ` 后任意目录运行；或在 repo 根目录用 `conda run -n base python -m skill4econ.cli ...`。
+  - 将 Required Workflow 改成优先在 `D:/myproject/econpaper/skill4econ` 根目录运行。
+  - 明确两种合法模式：`python -m pip install -e D:/myproject/econpaper/skill4econ` 后任意目录运行；或在 repo 根目录用 `conda run -n base python -m skill4econ.cli ...`。
   - 加入 `python -c "import skill4econ; print(skill4econ.__file__)"` 验证步骤。
 - 测试/命令：
-  - `conda run -n base python -m pip install -e D:/myproject/skill4econ`
+  - `conda run -n base python -m pip install -e D:/myproject/econpaper/skill4econ`
   - `conda run -n base python -c "import skill4econ; print(skill4econ.__file__)"`
 - 验收标准：
-  - 文档不再要求从 EvoScientist 根目录裸跑。
-  - import path 指向 `D:/myproject/skill4econ/src/skill4econ`。
+  - 文档不再要求从 econpaper 根目录裸跑。
+  - import path 指向 `D:/myproject/econpaper/skill4econ/src/skill4econ`。
 - 风险：
   - 用户机器上可能已有旧 editable install；文档需提供清理/验证步骤。
 - 建议 commit 名：
@@ -157,9 +157,9 @@ Production-ready 表示一次正式生成至少产出：
 
 - 目标：避免根 `.gitignore` 的 `artifacts/` 意外忽略 `integrations/easypaper-econ-finance/examples/.../artifacts`。
 - 文件/模块：
-  - `D:/myproject/skill4econ/.gitignore`
-  - `D:/myproject/skill4econ/integrations/easypaper-econ-finance/.gitignore`
-  - EasyPaper fork `.gitignore`
+  - `D:/myproject/econpaper/skill4econ/.gitignore`
+  - `D:/myproject/econpaper/skill4econ/integrations/easypaper-econ-finance/.gitignore`
+  - EasyPaper-derived layer `.gitignore`
 - 具体改动：
   - 将泛化 `artifacts/` 改为明确运行产物目录，如 `/outputs/`、`/results/`、`/.artifacts/`。
   - 对需要 tracked 的 example artifacts 加反向 ignore。
@@ -190,7 +190,7 @@ Production-ready 表示一次正式生成至少产出：
 - 风险：
   - 大量文件 whitespace 变化会污染 review；拆独立 commit。
 - 建议 commit 名：
-  - `chore: clean whitespace in econ finance fork`
+  - `chore: clean whitespace in econ finance workspace`
 
 ---
 
@@ -385,9 +385,9 @@ Production-ready 表示一次正式生成至少产出：
 
 ### Task B5.2 skill4econ artifact contract 对接
 
-- 目标：EasyPaper 能消费 skill4econ 输出，但不依赖 EvoScientist agent。
+- 目标：EasyPaper 能消费 skill4econ 输出，但不依赖 econpaper agent。
 - 文件/模块：
-  - `D:/myproject/skill4econ/src/skill4econ/contracts/artifact_manifest.py`
+  - `D:/myproject/econpaper/skill4econ/src/skill4econ/contracts/artifact_manifest.py`
   - EasyPaper：`src/agents/metadata_agent/artifact_manifest.py`
   - 新增 cross repo docs：`integrations/easypaper-econ-finance/README_SKILL4ECON_INTEGRATION.md`
 - 具体改动：

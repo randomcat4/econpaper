@@ -1,11 +1,11 @@
-# EasyPaper v3 Risk Drill: Figure Block + Test Triage
+﻿# EasyPaper v3 Risk Drill: Figure Block + Test Triage
 
 Scope: static/source inspection only. I did not install `easypaper`, did not run `pip install`, and did not run the test suite.
 
 ## Hard verdict
 
-- Figure unblock recommendation: choose Path B, file-backed injection with `FigureSpec(auto_generate=False, file_path=...)`, using real figures produced by EvoScientist/skill4econ econ analysis artifacts. Do not unlock result/data figures through Dreamer as the primary path.
-- Regression survivability is not below 20 direct tests. Static file-level triage finds 31 pure/source-level files plus 15 direct files with mocks or in-process ASGI clients already present. That gives about 46 direct fork-regression files before considering guarded TeX/fixture files.
+- Figure unblock recommendation: choose Path B, file-backed injection with `FigureSpec(auto_generate=False, file_path=...)`, using real figures produced by econpaper/skill4econ econ analysis artifacts. Do not unlock result/data figures through Dreamer as the primary path.
+- Regression survivability is not below 20 direct tests. Static file-level triage finds 31 pure/source-level files plus 15 direct files with mocks or in-process ASGI clients already present. That gives about 46 direct compatibility-regression files before considering guarded TeX/fixture files.
 - Tier 3 econ_analysis_agent is required for trustworthy econ/result figures if Path B is the plan. It should be the upstream artifact producer, not an EasyPaper-internal Dreamer replacement. The cost is moderate, but lower than accepting unreliable LLM-fabricated econ figures.
 
 ## Figure unblock path analysis
@@ -52,7 +52,7 @@ Operational risk: medium. It adds dependency on `academic_dreamer` and the image
 
 Required edits:
 
-- Build a small adapter from EvoScientist/skill4econ output artifacts to EasyPaper metadata figures.
+- Build a small adapter from econpaper/skill4econ output artifacts to EasyPaper metadata figures.
 - Copy or reference figure files under `materials_root` and create `FigureSpec(id, caption, description, section, file_path, auto_generate=False, semantic_role, target_type)`.
 - Prefer artifact-manifest discovery where available; otherwise use deterministic artifact naming such as `event_study_plot.png`.
 - Add path-resolution and placement tests around `metadata_utils.validate_file_paths`, `preprocess_generated_figures`, and `latex_helpers.collect_figure_paths`.
@@ -67,11 +67,11 @@ Recommendation: Path B. Path A is cheaper in code but expensive in scientific ri
 
 ## Test suite triage
 
-Found 50 `tests/test_*.py` files under `competitor_repos/easypaper-source/tests`.
+Found 50 `tests/test_*.py` files under `econpaper/EasyPaper/tests`.
 
 ### Pure/source-level or no real service/LLM
 
-These are the safest direct fork-regression files by static inspection:
+These are the safest direct compatibility-regression files by static inspection:
 
 - `test_agent_discovery_contracts.py`
 - `test_assign_references.py`
@@ -143,7 +143,7 @@ Evidence:
 - `test_table_converter_enhanced.py`: mostly unit tests, but the fixture `blip2_track_meta` skips if the real metadata file is absent (`tests/test_table_converter_enhanced.py:25-30`), and `test_pdflatex_compiles_each_table_preview` performs a real pdflatex compile if pdflatex exists (`tests/test_table_converter_enhanced.py:1644-1685`). It has no decorator skip marker on that test, but it does have an inline `shutil.which("pdflatex")` guard at `tests/test_table_converter_enhanced.py:1650-1651`.
 - `test_table_visual_preview.py`: has one inline pdflatex skip (`tests/test_table_visual_preview.py:98-99`), several mocked subprocess tests (`tests/test_table_visual_preview.py:256-265`, `tests/test_table_visual_preview.py:292-309`), and one decorator skipif for a real TeX compile (`tests/test_table_visual_preview.py:433-472`).
 
-### Needs LLM API key, real PDF, or rewrite before fork regression
+### Needs LLM API key, real PDF, or rewrite before compatibility regression
 
 - `test_gemini.py`: no pytest test functions by inspection; it is a scratch script. Network calls are guarded under `__main__` (`tests/test_gemini.py:4-5`, `tests/test_gemini.py:58-59`). If run as a script, it requires `OPENROUTER_API_KEY` (`tests/test_gemini.py:15-23`) and calls `google/gemini-3-pro-preview` twice (`tests/test_gemini.py:26-35`, `tests/test_gemini.py:50-55`). Actual mock depth: zero.
 - `test_parse_agent.py`: initializes with a hard-coded OpenRouter-style key and base URL (`tests/test_parse_agent.py:20-24`), and the parse test uses a hard-coded local PDF path (`tests/test_parse_agent.py:36-42`). If that file exists, it calls `agent.run(file_path=pdf_path)` (`tests/test_parse_agent.py:43-48`), which should be treated as live integration unless mocked.
@@ -155,20 +155,20 @@ Evidence:
 - Real Docling service risk: none in tests by static inspection. `src/agents/shared/docling_analyzer.py:201-209` lazily imports Docling and raises an install message, while tests mock the import chain.
 - S3/AWS risk: no test file references were found in the static risk scan. `pyproject.toml:19` includes `boto3`, but there is no matching test-level S3 usage in this suite.
 
-## Can run directly as fork regression
+## Can run directly as compatibility regression
 
 Recommended direct list:
 
 - All files in "Pure/source-level or no real service/LLM".
 - All files in "Direct with mocks or in-process clients already present".
 
-That is about 46 files. Add `test_table_visual_preview.py` only if local pdflatex skips/runs are acceptable for the fork. Add the non-pdflatex portions of `test_table_converter_enhanced.py` with `-k "not pdflatex"` or after marking the real TeX test as integration.
+That is about 46 files. Add `test_table_visual_preview.py` only if local pdflatex skips/runs are acceptable for the imported codebase. Add the non-pdflatex portions of `test_table_converter_enhanced.py` with `-k "not pdflatex"` or after marking the real TeX test as integration.
 
 ## Needs mocks first
 
 - `test_gemini.py`: convert to a real pytest test with mocked OpenAI client, or rename/mark as manual integration.
 - `test_parse_agent.py`: remove the hard-coded key, parameterize the PDF fixture, and mock the LLM path or mark the parse test as integration.
-- `test_table_converter_enhanced.py`: split or mark the real pdflatex preview test; keep the deterministic converter tests in the direct fork set.
+- `test_table_converter_enhanced.py`: split or mark the real pdflatex preview test; keep the deterministic converter tests in the direct compatibility set.
 - Optional cleanup: mark `test_table_visual_preview.py` real TeX tests consistently even though it already has runtime/decorator skips.
 
 ## v2 G open questions

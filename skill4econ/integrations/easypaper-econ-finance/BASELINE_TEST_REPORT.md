@@ -1,4 +1,4 @@
-# Baseline Test Report
+﻿# Baseline Test Report
 
 Date: 2026-06-10
 
@@ -62,7 +62,7 @@ pytest -m "not live_llm and not latex and not slow" -q
 
 ## Passing Checks
 
-- Local import succeeds from `D:/myproject/EvoScientist/competitor_repos/easypaper-source/easypaper/__init__.py`.
+- Local import succeeds from `D:/myproject/econpaper/EasyPaper/easypaper/__init__.py`.
 - `tests/test_parse_agent.py`: `2 passed, 1 deselected`
 - `tests/test_table_visual_preview.py`: `10 passed, 2 deselected`
 - `tests/test_core_ref_analyzer.py tests/test_table_converter_enhanced.py::TestEndToEndPipeline`: `14 passed`

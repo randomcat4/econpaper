@@ -1,4 +1,4 @@
-"""Repo-local econometrics capability pack for EvoScientist agents."""
+﻿"""Repo-local econometrics capability pack for econpaper agents."""
 
 __all__ = ["__version__"]
 

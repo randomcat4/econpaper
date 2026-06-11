@@ -1,8 +1,8 @@
-# AUDIT v3 Patch Spec: Flow Trace and Tier 1.5 Venue/Section Routing
+﻿# AUDIT v3 Patch Spec: Flow Trace and Tier 1.5 Venue/Section Routing
 
 Scope: static/source inspection only. Do not install `easypaper`. Do not apply the code changes below in this audit pass. This document is the construction-ready Tier 1.5 PoC patch spec.
 
-Repo root assumed by line references: `competitor_repos/easypaper-source`.
+Repo root assumed by line references: `econpaper/EasyPaper`.
 
 ## A. End-to-end flow trace: `EasyPaper.generate(metadata)` to PDF on disk
 

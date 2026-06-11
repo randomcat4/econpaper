@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """Standalone runner for economics and finance EasyPaper jobs."""
 from __future__ import annotations
 
@@ -646,7 +646,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--skill4econ-run-dir",
-        help="Optional EvoScientist/skill4econ run directory to record in output reports.",
+        help="Optional skill4econ run directory to record in output reports.",
     )
     pdf_group = parser.add_mutually_exclusive_group()
     pdf_group.add_argument("--no-pdf", dest="compile_pdf", action="store_false", default=None)

@@ -1,5 +1,5 @@
-version: 0.1.0
-purpose: repo-local callable econometrics backends for EvoScientist agents
+﻿version: 0.1.0
+purpose: repo-local callable econometrics backends for econpaper agents
 policy:
   no_fake_results: true
   no_auto_install: true

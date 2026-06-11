@@ -1,4 +1,4 @@
-# easypaper 0.2.4 Forkability Audit
+﻿# easypaper 0.2.4 Source-Import Audit
 日期: 2026-05-31
 
 ## 1. Executive Summary
@@ -7,14 +7,14 @@ Tier 1 可行性: **中**。黑盒配置版能做 demo: 沿用 `title / idea_hyp
 
 Tier 2 可行性: **中**。schema、planner、section prompt、ML/NLP 结果图表启发式都在 Python 里有语义硬编码;不是重写,但不是“改几个 YAML”。真实改造量约 3-5 周。
 
-Tier 3 可行性: **低**。现有图路线是 AcademicDreamer AI 插画,没有 DiD/IV/RDD 执行层。端到端经济金融科研更适合在 EvoScientist 新增 `econ_analysis_agent`,把实证产物喂给 writer,而不是先在 easypaper 内硬塞。
+Tier 3 可行性: **低**。现有图路线是 AcademicDreamer AI 插画,没有 DiD/IV/RDD 执行层。端到端经济金融科研更适合在 econpaper 新增 `econ_analysis_agent`,把实证产物喂给 writer,而不是先在 easypaper 内硬塞。
 
 Top 3 风险:
 1. `required_sections` 基本是死配置: planner fallback 仍是 ML 论文骨架。
 2. `idea_hypothesis` 等字段被 Python prompt/context 多处消费,Pydantic alias 只能兼容输入,不能完成语义迁移。
 3. AcademicDreamer 生成概念图,不是 event-study/RD/IRF 真实数据图。
 
-推荐路径: 先做 **Tier 1.5 PoC**: planner 消费 venue sections;旧 schema 保持兼容并加 `research_question/identification_strategy`;新增一个只读 econ checker。PoC 通过后再进入 Tier 2。Tier 3 留给 EvoScientist 主线 agent 编排。
+推荐路径: 先做 **Tier 1.5 PoC**: planner 消费 venue sections;旧 schema 保持兼容并加 `research_question/identification_strategy`;新增一个只读 econ checker。PoC 通过后再进入 Tier 2。Tier 3 留给 econpaper 主线 agent 编排。
 
 ## 2. Tier 1 详细分析
 
@@ -49,7 +49,7 @@ Top 3 风险:
 - `src/agents/metadata_agent/figure_supplementation.py:228-230` 拒绝自主生成 data visualization;`figure_supplementation.py:258` 明确要求不要展示 empirical result curves、metrics、ablation data。
 - DiD/IV/RDD 需要数据协议、变量识别、模型选择、稳健性、聚类 SE、图表/表格绑定,现有 metadata_agent 没有这些状态机。
 
-估算工作量: L3,至少 2-3 个月。更优路径是 EvoScientist 新增 `econ_analysis_agent`,输出标准化 regression/table/figure artifacts,再由 easypaper/fork 写作。
+估算工作量: L3,至少 2-3 个月。更优路径是 econpaper 新增 `econ_analysis_agent`,输出标准化 regression/table/figure artifacts,再由 easypaper-derived layer 写作。
 
 ## 5. P0 问题逐条回答
 
@@ -130,19 +130,19 @@ grep: Python 中 `ablation=21, benchmark=32, baseline=24, hyperparameter=4, sota
 
 ## 8. 隐性信息发现
 
-academic_dreamer: 见 6.3。它是 PinkGranite 维护的 AI 学术插图包,不是数据可视化分析库。
+academic_dreamer: 见 6.3。它是 original maintainer 维护的 AI 学术插图包,不是数据可视化分析库。
 
-easypaper GitHub: PyPI metadata/本地 `pyproject.toml` 未填 Project-URL,但公开仓库存在: [`PinkGranite/EasyPaper`](https://github.com/PinkGranite/EasyPaper)。页面显示 public、146 commits、11 tags、4 stars、4 forks。用户给定“没有可见 GitHub 仓库”的前提已过期/不完整;仍需确认 sdist 0.2.4 与 GitHub tag 完全一致。PyPI 0.2.4 上传日期为 2026-05-24,release history 0.1.1 到 0.2.4 共 11 版: [`easypaper` PyPI](https://pypi.org/project/easypaper/)。
+easypaper GitHub: PyPI metadata/本地 `pyproject.toml` 未填 Project-URL,但公开仓库存在: [`the original EasyPaper source project`](the original EasyPaper source repository)。页面显示 public、146 commits、11 tags、4 stars、4 source-repo forks。用户给定“没有可见 GitHub 仓库”的前提已过期/不完整;仍需确认 sdist 0.2.4 与 GitHub tag 完全一致。PyPI 0.2.4 上传日期为 2026-05-24,release history 0.1.1 到 0.2.4 共 11 版: [`easypaper` PyPI](https://pypi.org/project/easypaper/)。
 
 boto3: 不是 Bedrock。`src/utils/storage_client.py:21` import boto3;`storage_client.py:34` 说明 wraps boto3 S3 client for OSS uploads;`storage_client.py:49-63` 读取 `STORAGE_TYPE/OSS_*`;`storage_client.py:70` 创建 `boto3.client("s3")`。调用点 `artifact_exporter.py:78-80`,用于上传 artifact。`STORAGE_TYPE != "oss"` 时 no-op。可考虑移到 server/oss extra。
 
 其它: AgentSociety 插件提供 config template 和交互式 metadata workflow,但仍要求旧五字段;`econ-writing-skill` 价值高,但只是 1245 行 prompt 素材,不是执行系统。
 
-## 9. 给 EvoScientist 团队的执行建议
+## 9. 给 econpaper 团队的执行建议
 
 建议走 **Tier 1.5 -> Tier 2**。第一周只做三件 PoC:
 1. 让 `venue_config.required_sections` 进入 planner,验证 `aer.yaml` 能稳定生成 Introduction/Data/Strategy/Results/Robustness/Conclusion。
 2. 保留旧字段,新增 `research_question` 和 `identification_strategy` alias/derived properties,验证 schema endpoint、planner、section prompts 不崩。
 3. 新增最小 econ tool,例如 `check_economic_significance`,只读已有回归表 JSON/CSV,验证 tool factory 和 writer feedback 闭环。
 
-长期 upstream 策略: 以 GitHub `PinkGranite/EasyPaper` tag 为准,不要只盯 PyPI sdist。经济学写作知识先进入 EvoScientist YAML subagents 和 easypaper writing_constraint;实证执行能力留在 EvoScientist `data_analysis/econ_analysis_agent`。fork 后先跑离线 regression,再补 LaTeX/PDF smoke。
+长期 upstream 策略: 以 GitHub `the original EasyPaper source project` tag 为准,不要只盯 PyPI sdist。经济学写作知识先进入 econpaper YAML subagents 和 easypaper writing_constraint;实证执行能力留在 econpaper `data_analysis/econ_analysis_agent`。独立项目化后先跑离线 regression,再补 LaTeX/PDF smoke。
