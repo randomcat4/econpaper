@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .auth import auth_status, login_provider, verify_provider
 from .claim_ledger import write_claim_ledger
 from .coherence import write_global_coherence
 from .compile_pack import compile_pack
@@ -199,6 +200,29 @@ def _cmd_quality_suite(args: argparse.Namespace) -> int:
     return 1 if result.has_hard_blocks else 0
 
 
+def _cmd_auth_login(args: argparse.Namespace) -> int:
+    result = login_provider(
+        args.provider,
+        api_key=args.api_key,
+        api_key_env=args.api_key_env,
+        auth_file=args.auth_file,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_auth_status(args: argparse.Namespace) -> int:
+    result = auth_status(auth_file=args.auth_file)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_auth_verify(args: argparse.Namespace) -> int:
+    result = verify_provider(args.provider, auth_file=args.auth_file, timeout=args.timeout)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="econpaper")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -376,6 +400,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     quality_suite.add_argument("--out", required=True, type=Path)
     quality_suite.set_defaults(func=_cmd_quality_suite)
+
+    auth = sub.add_parser(
+        "auth",
+        help="Manage OpenAI and Claude API authentication for live verification.",
+    )
+    auth_sub = auth.add_subparsers(dest="auth_command", required=True)
+
+    auth_login = auth_sub.add_parser(
+        "login",
+        help="Persist a usable auth source for OpenAI or Claude.",
+    )
+    auth_login.add_argument("provider", choices=["openai", "claude", "anthropic"])
+    auth_login.add_argument("--api-key", help="API key to store in the local auth file. The key is never printed.")
+    auth_login.add_argument("--api-key-env", help="Environment variable containing the API key.")
+    auth_login.add_argument("--auth-file", type=Path, help="Override the auth file path.")
+    auth_login.set_defaults(func=_cmd_auth_login)
+
+    auth_status_cmd = auth_sub.add_parser(
+        "status",
+        help="Show redacted OpenAI and Claude auth configuration status.",
+    )
+    auth_status_cmd.add_argument("--auth-file", type=Path, help="Override the auth file path.")
+    auth_status_cmd.set_defaults(func=_cmd_auth_status)
+
+    auth_verify = auth_sub.add_parser(
+        "verify",
+        help="Make a live provider request to verify configured authentication.",
+    )
+    auth_verify.add_argument("provider", choices=["openai", "claude", "anthropic"])
+    auth_verify.add_argument("--auth-file", type=Path, help="Override the auth file path.")
+    auth_verify.add_argument("--timeout", type=float, default=30.0)
+    auth_verify.set_defaults(func=_cmd_auth_verify)
 
     return parser
 

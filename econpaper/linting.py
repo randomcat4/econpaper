@@ -332,7 +332,7 @@ def _load_author_overrides(path: str | Path | None, report: LintReport) -> dict[
         )
         return {}
     try:
-        payload = json.loads(override_path.read_text(encoding="utf-8"))
+        payload = json.loads(override_path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         report.add_finding(
             "author_overrides_invalid_json",
@@ -377,7 +377,7 @@ def _load_evidence_ledger(run_dir: Path, report: LintReport) -> dict[str, Any]:
     for candidate in candidates:
         if candidate.exists():
             try:
-                payload = json.loads(candidate.read_text(encoding="utf-8"))
+                payload = json.loads(candidate.read_text(encoding="utf-8-sig"))
             except Exception as exc:
                 report.add_finding(
                     "invalid_evidence_ledger",

@@ -169,7 +169,7 @@ def _load_json(path: Path, result: NumericRenderingResult, label: str) -> dict[s
         result.add_issue(f"{label}_missing", "hard_block", f"{label} file does not exist: {path}", path=str(path))
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         result.add_issue(f"{label}_invalid_json", "hard_block", f"Could not parse {label} JSON: {exc}", path=str(path))
         return {}

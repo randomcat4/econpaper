@@ -203,7 +203,7 @@ def _check_human_eval(path: Path | None, result: ReleaseGateResult) -> None:
 
 def _load_json(path: Path, result: ReleaseGateResult, label: str) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         result.add_finding(f"{label}_invalid_json", "hard_block", f"Could not parse {label}: {exc}", path=str(path))
         return {}

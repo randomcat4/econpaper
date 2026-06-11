@@ -97,7 +97,7 @@ def _load_json(path: Path, report: RunValidationReport) -> dict[str, Any]:
         report.add_issue("missing_json", "hard_block", f"Required JSON file is missing: {path.name}", path.name)
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         report.add_issue("invalid_json", "hard_block", f"Could not parse {path.name}: {exc}", path.name)
         return {}

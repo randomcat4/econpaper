@@ -12,6 +12,7 @@ from .compile_pack import compile_pack
 from .design_profiler import write_design_profile
 from .evidence import write_evidence_ledger
 from .linting import parse_bibtex_keys
+from .numeric_renderer import render_numeric_template
 from .run_validation import write_run_validation
 from .section_writer import write_sections
 from .table_generator import write_publication_table
@@ -119,6 +120,8 @@ def write_manuscript_pack(
         out_dir=out_path,
     )
     result.manifest["steps"].append({"name": "sections", "status": sections.status})
+    numeric_sections_status = _render_numeric_sections(out_path, result)
+    result.manifest["steps"].append({"name": "render_numeric_sections", "status": numeric_sections_status})
     coherence = write_global_coherence(
         sections_dir=out_path / "sections",
         claim_ledger_path=out_path / "claim_ledger.json",
@@ -178,3 +181,45 @@ def _write_citation_reports(refs_path: Path, internal: Path, result: WritePackRe
     path.write_text(json.dumps(citation_index, ensure_ascii=False, indent=2), encoding="utf-8")
     (internal / "citation_safety_report.json").write_text(json.dumps(citation_safety, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+def _render_numeric_sections(out_path: Path, result: WritePackResult) -> str:
+    sections_dir = out_path / "sections"
+    internal = out_path / "reports" / "internal"
+    audit: dict[str, Any] = {
+        "version": WRITE_VERSION,
+        "status": "passed",
+        "sections": [],
+    }
+    evidence_ledger = out_path / "evidence_ledger.json"
+    slots = out_path / "slots.json"
+    if not sections_dir.exists():
+        result.add_issue("sections_missing_for_numeric_rendering", "hard_block", "Cannot render numeric placeholders because sections directory is missing.")
+        audit["status"] = "failed"
+        (internal / "numeric_rendering_sections.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
+        return "failed"
+    for path in sorted(sections_dir.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        if "{{" not in text:
+            audit["sections"].append({"path": str(path), "status": "skipped", "reason": "no_numeric_placeholders"})
+            continue
+        rendered = render_numeric_template(
+            path,
+            evidence_ledger_path=evidence_ledger,
+            slots_path=slots,
+            allow_raw_numbers=True,
+        )
+        entry = rendered.to_dict()
+        entry["path"] = str(path)
+        audit["sections"].append(entry)
+        if rendered.has_hard_blocks:
+            audit["status"] = "failed"
+            result.add_issue(
+                "section_numeric_rendering_failed",
+                "hard_block",
+                f"Numeric placeholders could not be rendered in {path.name}.",
+            )
+            continue
+        path.write_text(rendered.rendered_text, encoding="utf-8")
+    (internal / "numeric_rendering_sections.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(audit["status"])

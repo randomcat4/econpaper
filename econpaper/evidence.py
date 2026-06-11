@@ -163,7 +163,7 @@ def _run_id(run_dir: Path) -> str:
         if not path.exists():
             continue
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
         except Exception:
             continue
         if isinstance(payload, dict) and payload.get("run_id"):
@@ -176,7 +176,7 @@ def _discover_model_tables(run_dir: Path) -> list[Path]:
     manifest_path = run_dir / "artifact_manifest.json"
     if manifest_path.exists():
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
         except Exception:
             manifest = {}
         for item in manifest.get("artifacts", []) if isinstance(manifest, dict) else []:
@@ -262,7 +262,7 @@ def _read_table_rows(path: Path, result: EvidenceBuildResult) -> list[dict[str, 
             return []
     if suffix == ".json":
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
         except Exception as exc:
             result.add_issue("model_table_parse_failed", "hard_block", f"Could not parse model table JSON: {exc}", str(path))
             return []
@@ -455,7 +455,7 @@ def _load_optional_json(path: Path, result: EvidenceBuildResult) -> dict[str, An
         result.add_issue("intake_profile_missing", "flag_and_confirm", f"Intake profile does not exist: {path}", str(path))
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         result.add_issue("intake_profile_invalid", "flag_and_confirm", f"Could not parse intake profile: {exc}", str(path))
         return {}

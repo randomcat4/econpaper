@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from econpaper.compile_pack import compile_pack
+from econpaper.release_gate import run_release_gate
 from econpaper.venue import resolve_venue
 from econpaper.write_pack import write_manuscript_pack
 
@@ -96,6 +97,25 @@ def _refs(path: Path) -> Path:
     return refs
 
 
+def _human_eval(path: Path) -> Path:
+    return _write_json(
+        path,
+        {
+            "evaluations": [
+                {
+                    "reviewer_role": "economics scholar",
+                    "generated_text_retention": 0.60,
+                    "time_saved": True,
+                    "silent_fabrication_reported": False,
+                    "author_report_clearer": True,
+                    "feedback_attached": True,
+                }
+                for _ in range(5)
+            ]
+        },
+    )
+
+
 def test_venue_profiles_are_formatting_only() -> None:
     profile = resolve_venue("aea")
     assert profile.venue_id == "aea"
@@ -162,6 +182,11 @@ def test_write_manuscript_pack_generates_core_outputs(tmp_path: Path) -> None:
     assert (out / "tables" / "table_main.tex").exists()
     assert (out / "bibliography" / "refs.bib").exists()
     assert (out / "reports" / "internal" / "write_pack_manifest.json").exists()
+    assert (out / "reports" / "internal" / "numeric_rendering_sections.json").exists()
+    assert "{{" not in (out / "sections" / "04_results.md").read_text(encoding="utf-8")
+    assert "{{" not in (out / "main.md").read_text(encoding="utf-8")
+    release = run_release_gate(pack_dir=out, human_eval_path=_human_eval(tmp_path / "human_eval.json"))
+    assert release.has_hard_blocks is False
 
 
 def test_write_cli_generates_pack(tmp_path: Path) -> None:
@@ -193,3 +218,4 @@ def test_write_cli_generates_pack(tmp_path: Path) -> None:
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert (out / "main.md").exists()
     assert (out / "reports" / "internal" / "compile_report.json").exists()
+    assert "{{" not in (out / "main.md").read_text(encoding="utf-8")

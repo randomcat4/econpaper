@@ -84,6 +84,16 @@ def test_known_success_run_allows_automatic_claims(tmp_path: Path) -> None:
     assert report.automatic_results_allowed is True
 
 
+def test_windows_utf8_bom_json_is_accepted(tmp_path: Path) -> None:
+    run_dir = _run_dir(tmp_path)
+    for path in run_dir.glob("*.json"):
+        text = path.read_text(encoding="utf-8")
+        path.write_text(text, encoding="utf-8-sig")
+    report = validate_run_dir(run_dir, known_methods={"ols_cluster"})
+    assert report.status == "passed"
+    assert "invalid_json" not in _codes(report)
+
+
 def test_unknown_run_status_fails_closed(tmp_path: Path) -> None:
     run_dir = _run_dir(tmp_path, status="weird_completed_state")
     report = validate_run_dir(run_dir, known_methods={"ols_cluster"})

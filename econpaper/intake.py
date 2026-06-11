@@ -176,7 +176,7 @@ def _load_structured_file(path: str | Path | None, result: IntakeBuildResult, *,
         result.add_issue("missing_input_file", "hard_block", f"{source_name} file does not exist: {source}", str(source))
         return {}
     try:
-        text = source.read_text(encoding="utf-8")
+        text = source.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError as exc:
         result.add_issue("input_not_utf8", "hard_block", f"{source_name} must be UTF-8 readable: {exc}", str(source))
         return {}
