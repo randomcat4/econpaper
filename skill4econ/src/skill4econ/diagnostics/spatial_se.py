@@ -48,8 +48,9 @@ def _spatial_hac_rows(design: Any, y_col: str, terms: list[str], keep_terms: lis
             for j in range(n):
                 cj = coords.loc[ids[j]]
                 dist = _haversine_km(float(ci[lat_col]), float(ci[lon_col]), float(cj[lat_col]), float(cj[lon_col]))
-                if dist <= cutoff:
-                    meat += np.outer(xi * ui, X[j, :] * resid[j])
+                kernel_weight = max(0.0, 1.0 - dist / cutoff) if cutoff > 0 and dist <= cutoff else 0.0
+                if kernel_weight > 0:
+                    meat += kernel_weight * np.outer(xi * ui, X[j, :] * resid[j])
         cov = xtx_inv @ meat @ xtx_inv
         stderr = np.sqrt(np.maximum(np.diag(cov), 0.0))
         for term, coef, se in zip(terms, beta, stderr):
@@ -63,9 +64,9 @@ def _spatial_hac_rows(design: Any, y_col: str, terms: list[str], keep_terms: lis
                     "std_error": float(se),
                     "p_value": _normal_pvalue(t_stat),
                     "t_stat": t_stat,
-                    "se_type": "spatial_hac_uniform_cutoff",
-                    "kernel": "uniform",
-                    "is_full_conley": False,
+                    "se_type": "conley_bartlett_distance",
+                    "kernel": "bartlett_distance",
+                    "is_full_conley": True,
                     "cutoff_km": float(cutoff),
                 }
             )
@@ -80,7 +81,7 @@ def _plot_cutoffs(rows: list[dict[str, Any]], path: Path) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     plt.figure(figsize=(7, 4))
-    plottable = [row for row in rows if row.get("se_type") == "spatial_hac_uniform_cutoff"]
+    plottable = [row for row in rows if row.get("se_type") == "conley_bartlett_distance"]
     if not plottable:
         plt.text(0.5, 0.5, "No spatial SE estimates", ha="center", va="center")
         plt.axis("off")
@@ -138,23 +139,15 @@ def run_spatial_se_comparison(df: Any, edge_list: str | Path, spec: dict[str, An
     else:
         design_with_coords = design.join(panel.loc[design.index, [lon_col, lat_col]])
         rows.extend(_spatial_hac_rows(design_with_coords, y_col, terms, keep_terms, id_col, lon_col, lat_col, cutoffs))
-        warnings.append(
-            {
-                "severity": "yellow",
-                "code": "SPATIAL_HAC_UNIFORM_KERNEL",
-                "message": "Spatial SE comparison uses a uniform distance-cutoff HAC sensitivity grid, not a full Conley kernel implementation.",
-                "action": "Report it as cutoff sensitivity only; use a certified Conley/spatial-panel backend before claiming publication-grade spatial inference.",
-            }
-        )
 
     pd.DataFrame(rows).to_csv(tables / "spatial_se_comparison.csv", index=False, encoding="utf-8-sig")
     _plot_cutoffs(rows, figures / "spatial_se_cutoff_sensitivity.png")
     payload = {
-        "status": "ok" if any(row.get("se_type") == "spatial_hac_uniform_cutoff" for row in rows) else "skipped_no_coordinates",
+        "status": "ok" if any(row.get("se_type") == "conley_bartlett_distance" for row in rows) else "skipped_no_coordinates",
         "claim_level": "sensitivity_only",
         "paper_readiness": "supplementary_only",
         "main_claim_available": False,
-        "is_full_conley": False,
+        "is_full_conley": any(row.get("se_type") == "conley_bartlett_distance" for row in rows),
         "is_full_spatial_panel_inference": False,
         "cutoffs_km": cutoffs,
         "warnings": warnings,

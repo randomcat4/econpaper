@@ -15,6 +15,7 @@ from .incremental_rerun import write_incremental_rerun
 from .intake import write_intake_profile
 from .linting import run_lint
 from .numeric_renderer import write_numeric_rendering
+from .oneclick import run_oneclick
 from .quality_suite import write_quality_suite_manifest
 from .release_gate import write_release_gate
 from .run_validation import write_run_validation
@@ -212,6 +213,33 @@ def _cmd_write(args: argparse.Namespace) -> int:
 
 def _cmd_quality_suite(args: argparse.Namespace) -> int:
     result = write_quality_suite_manifest(out_dir=args.out)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_oneclick(args: argparse.Namespace) -> int:
+    result = run_oneclick(
+        case_id=args.case,
+        out_root=args.out_root,
+        run_dir=args.run_dir,
+        raw_data_dir=args.raw_data_dir,
+        intake_profile_path=args.intake,
+        answers_path=args.answers,
+        spec_path=args.spec,
+        refs_path=args.refs,
+        venue=args.venue,
+        latex_command=args.latex_command,
+        model_table_paths=args.model_table,
+        summary_stats_path=args.summary_stats,
+        human_eval_path=args.human_eval,
+        target_venue=args.target_venue,
+        preferred_contribution=args.preferred_contribution,
+        project_title=args.project_title,
+        field=args.field,
+        skip_codex_review=args.skip_codex_review,
+        codex_timeout=args.codex_timeout,
+        require_auth=not args.no_auth,
+    )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
 
@@ -417,7 +445,7 @@ def build_parser() -> argparse.ArgumentParser:
     compile_cmd.add_argument("pack_dir", type=Path)
     compile_cmd.add_argument("--venue", default="generic-field-journal")
     compile_cmd.add_argument("--out", type=Path)
-    compile_cmd.add_argument("--latex-command", default="pdflatex")
+    compile_cmd.add_argument("--latex-command", default="auto")
     compile_cmd.add_argument("--max-attempts", type=int, default=2)
     compile_cmd.set_defaults(func=_cmd_compile)
 
@@ -430,7 +458,7 @@ def build_parser() -> argparse.ArgumentParser:
     write.add_argument("--refs", required=True, type=Path)
     write.add_argument("--venue", default="generic-field-journal")
     write.add_argument("--out", required=True, type=Path)
-    write.add_argument("--latex-command", default="pdflatex")
+    write.add_argument("--latex-command", default="auto")
     write.add_argument(
         "--mode",
         choices=["draft", "strict"],
@@ -452,6 +480,41 @@ def build_parser() -> argparse.ArgumentParser:
     )
     quality_suite.add_argument("--out", required=True, type=Path)
     quality_suite.set_defaults(func=_cmd_quality_suite)
+
+    oneclick = sub.add_parser(
+        "oneclick",
+        help="Run an auth-gated end-to-end pipeline for a registered case or custom project inputs.",
+    )
+    oneclick.add_argument("--case", help="Registered smoke case id, or a custom project id when custom inputs are supplied.")
+    oneclick.add_argument("--out-root", type=Path, default=Path("reports") / "oneclick")
+    oneclick.add_argument("--run-dir", type=Path, help="Existing skill4econ run directory.")
+    oneclick.add_argument(
+        "--raw-data-dir",
+        type=Path,
+        help="Raw-data-only directory. This is inventoried and fail-closed unless a valid run/model table is also supplied.",
+    )
+    oneclick.add_argument("--intake", type=Path, help="Existing econpaper intake_profile.json.")
+    oneclick.add_argument("--answers", type=Path, help="Author answers JSON/YAML used to build intake_profile.json.")
+    oneclick.add_argument("--spec", type=Path, help="Author project spec JSON/YAML used to build intake_profile.json.")
+    oneclick.add_argument("--refs", type=Path, help="BibTeX references file.")
+    oneclick.add_argument("--venue", default="generic-field-journal")
+    oneclick.add_argument("--target-venue", help="Target venue override when building intake.")
+    oneclick.add_argument("--preferred-contribution", help="Contribution statement override when building intake.")
+    oneclick.add_argument("--project-title", help="Working title override when building intake.")
+    oneclick.add_argument("--field", help="Field override when building intake.")
+    oneclick.add_argument("--latex-command", default="auto")
+    oneclick.add_argument(
+        "--model-table",
+        action="append",
+        type=Path,
+        help="Structured model_table.csv/json. May be passed multiple times.",
+    )
+    oneclick.add_argument("--summary-stats", type=Path)
+    oneclick.add_argument("--human-eval", type=Path)
+    oneclick.add_argument("--skip-codex-review", action="store_true")
+    oneclick.add_argument("--codex-timeout", type=int, default=180)
+    oneclick.add_argument("--no-auth", action="store_true", help="Developer-only escape hatch for offline tests; normal runs should not use it.")
+    oneclick.set_defaults(func=_cmd_oneclick)
 
     auth = sub.add_parser(
         "auth",

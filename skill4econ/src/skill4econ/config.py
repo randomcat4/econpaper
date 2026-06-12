@@ -87,6 +87,16 @@ def _candidate_to_path(value: Any) -> Path | None:
     return path if path.exists() else None
 
 
+def _normalize_stata_executable(path: Path) -> tuple[Path, bool]:
+    if not sys.platform.startswith("win") or path.suffix.lower() not in {".cmd", ".bat"}:
+        return path, False
+    for name in STATA_EXECUTABLE_NAMES:
+        exe = path.with_name(f"{name}.exe")
+        if exe.exists():
+            return exe, True
+    return path, False
+
+
 def _windows_stata_candidates() -> list[Path]:
     candidates: list[Path] = []
     drives = [f"{ch}:\\" for ch in "CDEFGH" if Path(f"{ch}:\\").exists()]
@@ -142,25 +152,31 @@ def resolve_stata(spec: dict[str, Any] | None = None) -> tuple[Path | None, str]
     spec_value = _from_spec(spec, "stata", "executable") or _from_spec(spec, "stata_executable")
     path = _candidate_to_path(spec_value)
     if path:
-        return path, "spec"
+        path, normalized = _normalize_stata_executable(path)
+        return path, "spec_cmd_target" if normalized else "spec"
 
     env_value = os.environ.get(ENV_STATA)
     path = _candidate_to_path(env_value)
     if path:
-        return path, f"env:{ENV_STATA}"
+        path, normalized = _normalize_stata_executable(path)
+        source = f"env:{ENV_STATA}"
+        return path, f"{source}_cmd_target" if normalized else source
 
     user_cfg = _load_user_config()
     cfg_value = _from_spec(user_cfg, "stata", "executable")
     path = _candidate_to_path(cfg_value)
     if path:
-        return path, "user_config"
+        path, normalized = _normalize_stata_executable(path)
+        return path, "user_config_cmd_target" if normalized else "user_config"
 
     for path in _path_candidates():
-        return path, "PATH"
+        path, normalized = _normalize_stata_executable(path)
+        return path, "PATH_cmd_target" if normalized else "PATH"
 
     candidates = _windows_stata_candidates() if sys.platform.startswith("win") else _posix_stata_candidates()
     for path in candidates:
-        return path, "common_dirs"
+        path, normalized = _normalize_stata_executable(path)
+        return path, "common_dirs_cmd_target" if normalized else "common_dirs"
 
     return None, "missing"
 

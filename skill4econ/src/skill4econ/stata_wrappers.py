@@ -156,10 +156,25 @@ def _import_block(ctx: RunContext) -> str:
         raise Skill4EconError(f"Input data not found: {data}")
     suffix = data.suffix.lower()
     if suffix == ".csv":
-        return f'import delimited using "{_quote(data)}", clear varnames(1)'
+        return f'import delimited using "{_quote(data)}", clear varnames(1) bindquote(strict)'
     if suffix in {".xlsx", ".xlsm"}:
         return f'import excel using "{_quote(data)}", clear firstrow'
     raise Skill4EconError("Stata methods support CSV and XLSX inputs.")
+
+
+def _numeric_alias_block(var_name: str, alias: str) -> str:
+    return f"""
+capture confirm numeric variable {var_name}
+if _rc {{
+    capture destring {var_name}, gen({alias})
+    if _rc {{
+        encode {var_name}, gen({alias})
+    }}
+}}
+else {{
+    gen double {alias} = {var_name}
+}}
+"""
 
 
 def _export_estimates_block(ctx: RunContext) -> str:
@@ -458,17 +473,24 @@ def did_twfe_event(ctx: RunContext) -> dict[str, Any]:
         raise Skill4EconError("did_twfe_event requires y, treat, post, id, and time.")
     controls = f" {x}" if x else ""
     cluster = ctx.spec.get("cluster") or id_col
+    id_fe = "_s4e_id_fe"
+    time_fe = "_s4e_time_fe"
+    cluster_fe = "_s4e_cluster_fe"
     do_text = f"""
 version 17
 set more off
 log using "{_quote(ctx.artifact("stata.log"))}", replace text
 {_import_block(ctx)}
-regress {y} c.{treat}#c.{post}{controls} i.{id_col} i.{time_col}, vce(cluster {cluster})
+{_numeric_alias_block(str(id_col), id_fe)}
+{_numeric_alias_block(str(time_col), time_fe)}
+{_numeric_alias_block(str(cluster), cluster_fe)}
+xtset {id_fe} {time_fe}
+xtreg {y} c.{treat}#c.{post}{controls} i.{time_fe}, fe vce(cluster {cluster_fe})
 {_export_estimates_block(ctx)}
 log close
 exit
 """
-    return _run_stata(ctx, do_text)
+    return _run_stata(ctx, do_text, timeout=480, estimator="Stata TWFE with absorbed panel FE")
 
 
 def did_event_study(ctx: RunContext) -> dict[str, Any]:
@@ -515,13 +537,20 @@ def did_event_study(ctx: RunContext) -> dict[str, Any]:
         event_setup.append(f"gen byte {term} = (_event_time == {k} & _treated_event)")
     controls = f" {x}" if x else ""
     cluster = ctx.spec.get("cluster") or id_col
+    id_fe = "_s4e_id_fe"
+    time_fe = "_s4e_time_fe"
+    cluster_fe = "_s4e_cluster_fe"
     do_text = f"""
 version 17
 set more off
 log using "{_quote(ctx.artifact("stata.log"))}", replace text
 {_import_block(ctx)}
+{_numeric_alias_block(str(id_col), id_fe)}
+{_numeric_alias_block(str(time_col), time_fe)}
+{_numeric_alias_block(str(cluster), cluster_fe)}
 {chr(10).join(event_setup)}
-regress {y} {" ".join(event_terms)}{controls} i.{id_col} i.{time_col}, vce(cluster {cluster})
+xtset {id_fe} {time_fe}
+xtreg {y} {" ".join(event_terms)}{controls} i.{time_fe}, fe vce(cluster {cluster_fe})
 {_export_estimates_block(ctx)}
 log close
 exit
@@ -529,6 +558,7 @@ exit
     return _run_stata(
         ctx,
         do_text,
+        timeout=480,
         estimator="Stata TWFE event study",
         window=[lo, hi],
         base_period=base,
@@ -685,16 +715,27 @@ def cs_did_attgt(ctx: RunContext) -> dict[str, Any]:
     seed_opt = f" rseed({int(seed)})" if seed is not None else ""
     wboot = bool(ctx.spec.get("wboot", False))
     wboot_opt = " wboot" if wboot else ""
+    id_num = "_s4e_id_num"
+    time_num = "_s4e_time_num"
+    gvar_num = "_s4e_gvar_num"
+    cluster_num = "_s4e_cluster_num"
+    cluster_setup = _numeric_alias_block(str(cluster), cluster_num) if cluster and str(cluster) != str(id_col) else ""
+    cluster_arg = cluster_num if cluster and str(cluster) != str(id_col) else str(cluster or id_col)
+    cluster_opt = f" cluster({cluster_arg})" if cluster and str(cluster) != str(id_col) else ""
     do_text = f"""
 version 17
 set more off
 {_vendor_adopath_block()}
 log using "{_quote(ctx.artifact("stata.log"))}", replace text
 {_import_block(ctx)}
+{_numeric_alias_block(str(id_col), id_num)}
+{_numeric_alias_block(str(time_col), time_num)}
+{_numeric_alias_block(str(gvar), gvar_num)}
+{cluster_setup}
 which csdid
 which drdid
 tempfile __attgt_out __simple_out __event_out __combined
-csdid {y} {x}, ivar({id_col}) time({time_col}) gvar({gvar}) method({method}){cluster_opt}{notyet_opt}{rc1_opt}{wboot_opt}{seed_opt}
+csdid {y} {x}, ivar({id_num}) time({time_num}) gvar({gvar_num}) method({method}){cluster_opt}{notyet_opt}{rc1_opt}{wboot_opt}{seed_opt}
 estimates store __csdid_base
 {_export_estimates_block_to(ctx, "__attgt_out")}
 preserve
@@ -771,8 +812,14 @@ def did_imputation_event(ctx: RunContext) -> dict[str, Any]:
     if not all([y, id_col, time_col, gvar]):
         raise Skill4EconError("did_imputation_event requires y, id, time, and gvar/adoption_time.")
     controls = " ".join(listify(ctx.spec.get("x") or ctx.spec.get("covars") or ctx.spec.get("controls")))
-    fe = " ".join(listify(ctx.spec.get("fe"))) or f"{id_col} {time_col}"
     cluster = ctx.spec.get("cluster") or id_col
+    id_num = "_s4e_id_num"
+    time_num = "_s4e_time_num"
+    gvar_num = "_s4e_gvar_num"
+    cluster_num = "_s4e_cluster_num"
+    fe_vars = listify(ctx.spec.get("fe"))
+    alias_map = {str(id_col): id_num, str(time_col): time_num}
+    fe = " ".join(alias_map.get(str(var), str(var)) for var in fe_vars) or f"{id_num} {time_num}"
     horizons = ctx.spec.get("horizons", None)
     allhorizons = bool(ctx.spec.get("allhorizons", False))
     if horizons is not None and allhorizons:
@@ -790,8 +837,14 @@ def did_imputation_event(ctx: RunContext) -> dict[str, Any]:
     saveweights_opt = " saveweights" if bool(ctx.spec.get("saveweights", ctx.spec.get("save_weights", False))) else ""
     leaveout_opt = " leaveout" if bool(ctx.spec.get("leaveout", False)) else ""
     hbalance_opt = " hbalance" if bool(ctx.spec.get("hbalance", False)) else ""
+    verbose_opt = " verbose" if bool(ctx.spec.get("verbose", ctx.spec.get("did_imputation_verbose", False))) else ""
+    nose_opt = " nose" if bool(ctx.spec.get("nose", ctx.spec.get("did_imputation_nose", False))) else ""
     minn = ctx.spec.get("minn")
     minn_opt = f" minn({int(minn)})" if minn is not None else ""
+    tol = ctx.spec.get("tol", ctx.spec.get("did_imputation_tol"))
+    tol_opt = f" tol({float(tol):.12g})" if tol is not None else ""
+    maxit = ctx.spec.get("maxit", ctx.spec.get("did_imputation_maxit"))
+    maxit_opt = f" maxit({int(maxit)})" if maxit is not None else ""
     controls_opt = f" controls({controls})" if controls else ""
     seed = ctx.spec.get("seed")
     seed_line = f"set seed {int(seed)}" if seed is not None else ""
@@ -801,12 +854,16 @@ set more off
 {_vendor_adopath_block()}
 log using "{_quote(ctx.artifact("stata.log"))}", replace text
 {_import_block(ctx)}
+{_numeric_alias_block(str(id_col), id_num)}
+{_numeric_alias_block(str(time_col), time_num)}
+{_numeric_alias_block(str(gvar), gvar_num)}
+{_numeric_alias_block(str(cluster), cluster_num)}
 {seed_line}
 which reghdfe
 which did_imputation
-gen double _s4e_ei = {gvar}
+gen double _s4e_ei = {gvar_num}
 replace _s4e_ei = . if _s4e_ei <= 0
-did_imputation {y} {id_col} {time_col} _s4e_ei, fe({fe}){controls_opt}{horizons_opt}{pretrend_opt} cluster({cluster}){autosample_opt}{saveweights_opt}{leaveout_opt}{hbalance_opt}{minn_opt} saveestimates(_s4e_tauhat)
+did_imputation {y} {id_num} {time_num} _s4e_ei, fe({fe}){controls_opt}{horizons_opt}{pretrend_opt} cluster({cluster_num}){autosample_opt}{saveweights_opt}{leaveout_opt}{hbalance_opt}{minn_opt}{tol_opt}{maxit_opt}{verbose_opt}{nose_opt} saveestimates(_s4e_tauhat)
 tempfile __model_out __model_dta
 {_export_estimates_block_to(ctx, "__model_out")}
 preserve
@@ -833,6 +890,7 @@ gen str32 backend = "did_imputation"
 gen str64 cluster = "{cluster}"
 gen str128 fe = "{fe}"
 gen str128 horizons = "{horizons_opt.strip()}"
+gen str64 convergence_options = "{' '.join(part.strip() for part in [tol_opt, maxit_opt, verbose_opt, nose_opt] if part.strip())}"
 gen double pre_F = .
 capture replace pre_F = e(pre_F) in 1
 gen double pre_p = .

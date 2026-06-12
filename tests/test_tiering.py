@@ -162,6 +162,82 @@ def _write_a_evidence_pack(pack: Path, *, stub_figure_manifest: bool = False) ->
     write_evidence_pack(evidence_ledger=ledger, run_dir=pack, out_dir=pack, run_validation_path=pack / "reports" / "internal" / "run_validation.json")
 
 
+def _write_rdd_tier_a_pack(pack: Path) -> None:
+    sections = pack / "sections"
+    sections.mkdir(parents=True, exist_ok=True)
+    for filename in [
+        "00_abstract.md",
+        "01_introduction.md",
+        "02_data.md",
+        "03_empirical_strategy.md",
+        "04_results.md",
+        "05_robustness.md",
+    ]:
+        (sections / filename).write_text(f"# {filename}\n\n" + ("rdd evidence " * 600) + "\n", encoding="utf-8")
+    (pack / "main.md").write_text("rdd evidence " * 6200, encoding="utf-8")
+    _write_json(
+        pack / "design_profile.json",
+        {
+            "status": "passed",
+            "declared_design_type": "geographic RDD",
+            "checked_design_type": "rdd_artifacts_present",
+            "diagnostics_present": ["rd_plot", "manipulation_test", "bandwidth_sensitivity", "covariate_continuity"],
+            "diagnostics_missing": [],
+        },
+    )
+    _write_json(pack / "reports" / "internal" / "global_coherence.json", {"status": "passed", "has_hard_blocks": False})
+    _write_json(
+        pack / "reports" / "internal" / "citation_safety_report.json",
+        {"missing_citekeys": [], "citation_uses": [], "external_notes_used": [{"note_id": "imbens2008"}]},
+    )
+    _write_json(pack / "reports" / "internal" / "run_validation.json", {"data_provenance": "author_supplied"})
+    _write_json(pack / "claim_ledger.json", {"claims": [{"status": "safe", "evidence_refs": ["ev1"]}]})
+    _write_csv(
+        pack / "model_table.csv",
+        [
+            {
+                "term": "Robust",
+                "coef": "-0.05",
+                "std_error": "0.01",
+                "ci_low": "-0.07",
+                "ci_high": "-0.03",
+                "n_obs": "1280",
+                "n_clusters": "160",
+            }
+        ],
+    )
+    _write_csv(pack / "summary_stats.csv", [{"variable": "y", "mean": "5.4", "sd": "0.2", "unit": "log visits"}])
+    _write_csv(pack / "rdd_bandwidth.csv", [{"side": "left", "bandwidth": "1.5"}, {"side": "right", "bandwidth": "1.5"}])
+    _write_json(pack / "rdd_density_test.json", {"status": "passed", "p_value": 0.57})
+    _write_csv(pack / "covariate_continuity.csv", [{"covariate": "baseline_y", "status": "passed", "p_value": "0.83"}])
+    _write_json(
+        pack / "rdd_diagnostics.json",
+        {
+            "density_test": {"status": "passed", "path": "rdd_density_test.json", "p_value": 0.57},
+            "covariate_continuity": {"status": "passed", "path": "covariate_continuity.csv"},
+        },
+    )
+    ledger = {
+        "artifacts": [
+            {"artifact_id": "model_table_main", "artifact_type": "model_table", "path": "model_table.csv", "hash": "sha256:model", "claimable": True},
+            {"artifact_id": "summary_main", "artifact_type": "summary_stats", "path": "summary_stats.csv", "hash": "sha256:summary", "claimable": True},
+            {"artifact_id": "rdd_bandwidth_main", "artifact_type": "rdd_bandwidth", "path": "rdd_bandwidth.csv", "hash": "sha256:bw", "claimable": True},
+            {"artifact_id": "rdd_diagnostics_main", "artifact_type": "rdd_diagnostics", "path": "rdd_diagnostics.json", "hash": "sha256:diag", "claimable": True},
+        ],
+        "evidence_items": [
+            {
+                "evidence_id": "ev1",
+                "artifact_id": "model_table_main",
+                "statistic": "coefficient",
+                "value": -0.05,
+                "variable": "Robust",
+                "provenance_hash": "sha256:cell",
+            }
+        ],
+    }
+    write_evidence_pack(evidence_ledger=ledger, run_dir=pack, out_dir=pack, run_validation_path=pack / "reports" / "internal" / "run_validation.json")
+
+
 def test_tiering_counts_floor_sections_and_did_missing_artifacts(tmp_path: Path) -> None:
     pack = tmp_path / "pack"
     sections = pack / "sections"
@@ -258,6 +334,19 @@ def test_valid_tier_b_content_reaches_but_not_a(tmp_path: Path) -> None:
     assert "verified_literature_notes_missing" in result.metrics["tier_a_blockers"]
     assert result.metrics["verified_literature_note_count"] == 0
     assert "robustness_grid" in result.metrics["did_tier_a_incomplete_artifacts"]
+
+
+def test_rdd_tier_a_requires_computed_density_and_covariate_continuity(tmp_path: Path) -> None:
+    pack = tmp_path / "rdd_tier_a_pack"
+    _write_rdd_tier_a_pack(pack)
+
+    result = evaluate_pack_tier(pack)
+
+    assert result.draft_tier == "A"
+    assert result.metrics["design_family"] == "rdd"
+    assert result.metrics["rdd_tier_a_missing_or_incomplete_artifacts"] == []
+    assert result.metrics["rdd_artifact_content"]["model_table"]["tier_a_status"] == "passed"
+    assert result.metrics["rdd_artifact_content"]["rdd_diagnostics"]["tier_a_status"] == "passed"
 
 
 def test_figure_manifest_requires_existing_explicit_event_study_path(tmp_path: Path) -> None:

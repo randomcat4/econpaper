@@ -40,6 +40,7 @@ DIAGNOSTIC_METHOD_HINTS = {
     "spatial_moran_preflight",
     "spatial_spdep_lisa",
     "ml_prediction_audit",
+    "plot_diagnostics",
 }
 
 SENSITIVITY_METHOD_HINTS = {
@@ -59,8 +60,13 @@ EXPLORATORY_METHOD_HINTS = {
     "rdd_local_linear",
     "quantile_regression",
     "threshold_panel",
+    # Registered invocation aliases must carry the same claim level as their
+    # canonical names, otherwise `--method <alias>` escapes the fallback gate.
+    "threshold_panel_search",
     "mediation_moderation",
+    "mediation_baron_kenny",
     "synthetic_control",
+    "synthetic_control_basic",
     "dml_plr_crossfit",
     "dml_irm_crossfit",
 }
@@ -169,6 +175,8 @@ def infer_claim_contract(
             "IPW_EXTREME_WEIGHTS",
             "EXTREME_IPW_WEIGHTS",
             "IPW_LOW_EFFECTIVE_SAMPLE_SIZE",
+            "IV_FIRST_STAGE_MISSING",
+            "IV_WEAK_INSTRUMENT",
             "LOW_EFFECTIVE_SAMPLE_SIZE",
             "CONTROL_GROUP_CONTAMINATED",
             "EXPOSURE_CONTROL_DEFINITION_WEAK",

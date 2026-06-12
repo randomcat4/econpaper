@@ -98,9 +98,13 @@ def evaluate_pack_tier(pack_dir: str | Path) -> TieringResult:
         if name in CORE_SECTIONS
     )
     artifact_types = artifact_types_from_pack(evidence)
-    did_content = _did_artifact_content_checks(pack, evidence)
-    did_a_incomplete = _did_incomplete_artifacts(DID_TIER_A_ARTIFACTS, did_content, tier="a")
-    did_b_incomplete = _did_incomplete_artifacts(DID_TIER_B_ARTIFACTS, did_content, tier="b")
+    design_family = _design_family(design)
+    did_content = _did_artifact_content_checks(pack, evidence) if design_family == "did" else {}
+    did_a_incomplete = _did_incomplete_artifacts(DID_TIER_A_ARTIFACTS, did_content, tier="a") if design_family == "did" else []
+    did_b_incomplete = _did_incomplete_artifacts(DID_TIER_B_ARTIFACTS, did_content, tier="b") if design_family == "did" else []
+    rdd_content = _rdd_artifact_content_checks(pack, evidence) if design_family == "rdd" else {}
+    rdd_b_missing = _rdd_missing_artifacts(rdd_content, tier="b") if design_family == "rdd" else []
+    rdd_a_missing = _rdd_missing_artifacts(rdd_content, tier="a") if design_family == "rdd" else []
     evidence_coverage = _evidence_coverage(evidence, claims)
     citation_integrity = _citation_integrity(citation)
     verified_literature_note_count = _verified_literature_note_count(citation)
@@ -109,8 +113,8 @@ def evaluate_pack_tier(pack_dir: str | Path) -> TieringResult:
     words_total = _word_count(main_text)
     bound_claim_count = _bound_claim_count(claims)
     claim_density = round((bound_claim_count / words_total) * 1000, 2) if words_total else 0.0
-    did_a_missing = sorted(DID_TIER_A_ARTIFACTS - artifact_types)
-    did_b_missing = sorted(DID_TIER_B_ARTIFACTS - artifact_types)
+    did_a_missing = sorted(DID_TIER_A_ARTIFACTS - artifact_types) if design_family == "did" else []
+    did_b_missing = sorted(DID_TIER_B_ARTIFACTS - artifact_types) if design_family == "did" else []
     provenance = {
         "data_provenance": run_validation.get("data_provenance") or "unknown",
         "public_watermark": run_validation.get("public_watermark"),
@@ -143,6 +147,8 @@ def evaluate_pack_tier(pack_dir: str | Path) -> TieringResult:
         tier_a_reasons.append("did_tier_a_artifacts_missing")
     if did_a_incomplete:
         tier_a_reasons.append("did_tier_a_artifacts_incomplete")
+    if rdd_a_missing:
+        tier_a_reasons.append("rdd_tier_a_artifacts_missing_or_incomplete")
 
     tier_b_reasons = []
     if evidence_pack.has_hard_blocks:
@@ -163,6 +169,8 @@ def evaluate_pack_tier(pack_dir: str | Path) -> TieringResult:
         tier_b_reasons.append("did_tier_b_artifacts_missing")
     if did_b_incomplete:
         tier_b_reasons.append("did_tier_b_artifacts_incomplete")
+    if rdd_b_missing:
+        tier_b_reasons.append("rdd_tier_b_artifacts_missing_or_incomplete")
 
     if not tier_a_reasons:
         draft_tier = "A"
@@ -187,14 +195,18 @@ def evaluate_pack_tier(pack_dir: str | Path) -> TieringResult:
         "path_leak_count": len(path_leaks),
         "path_leaks": path_leaks,
         "design_gate": design_gate,
+        "design_family": design_family,
         "evidence_pack_status": evidence_pack_status,
         "evidence_pack_issues": evidence_pack_issues,
         "artifact_types": sorted(artifact_types),
         "did_artifact_content": did_content,
+        "rdd_artifact_content": rdd_content,
         "did_tier_a_missing_artifacts": did_a_missing,
         "did_tier_b_missing_artifacts": did_b_missing,
         "did_tier_a_incomplete_artifacts": did_a_incomplete,
         "did_tier_b_incomplete_artifacts": did_b_incomplete,
+        "rdd_tier_a_missing_or_incomplete_artifacts": rdd_a_missing,
+        "rdd_tier_b_missing_or_incomplete_artifacts": rdd_b_missing,
         "tier_a_blockers": tier_a_reasons,
         "tier_b_blockers": tier_b_reasons,
         "provenance": provenance,
@@ -281,6 +293,102 @@ def _did_incomplete_artifacts(required: set[str], checks: dict[str, Any], *, tie
         if check.get(f"tier_{tier}_status", check.get("status")) != "passed":
             incomplete.append(artifact_type)
     return incomplete
+
+
+def _design_family(design: dict[str, Any]) -> str:
+    text = " ".join(
+        str(design.get(key) or "")
+        for key in ["declared_design_type", "checked_design_type", "estimand_scope"]
+    ).lower()
+    if "rdd" in text or "regression discontinuity" in text:
+        return "rdd"
+    if "did" in text or "difference" in text or "staggered" in text:
+        return "did"
+    return "did"
+
+
+def _rdd_artifact_content_checks(pack: Path, evidence: dict[str, Any]) -> dict[str, Any]:
+    artifacts = evidence.get("artifacts", []) if isinstance(evidence, dict) else []
+    by_path = {
+        str(artifact.get("path") or "").replace("\\", "/"): artifact
+        for artifact in artifacts
+        if isinstance(artifact, dict)
+    }
+    model_paths = _artifact_paths(
+        pack,
+        [artifact for artifact in artifacts if isinstance(artifact, dict) and artifact.get("artifact_type") == "model_table"],
+    )
+    summary_paths = _artifact_paths(
+        pack,
+        [artifact for artifact in artifacts if isinstance(artifact, dict) and artifact.get("artifact_type") == "summary_stats"],
+    )
+    diagnostics_path = pack / "rdd_diagnostics.json"
+    bandwidth_path = pack / "rdd_bandwidth.csv"
+    model_detail = _check_model_table(model_paths)
+    summary_detail = _check_summary_stats(summary_paths)
+    diagnostics = _load_json(diagnostics_path) if diagnostics_path.exists() else {}
+    density = diagnostics.get("density_test") if isinstance(diagnostics.get("density_test"), dict) else {}
+    covariates = diagnostics.get("covariate_continuity") if isinstance(diagnostics.get("covariate_continuity"), dict) else {}
+    return {
+        "model_table": {
+            "status": "passed" if model_detail.get("tier_b_passed") else "failed",
+            "tier_b_status": "passed" if model_detail.get("tier_b_passed") else "failed",
+            "tier_a_status": "passed" if model_detail.get("tier_a_passed") else "failed",
+            "paths": [str(path.relative_to(pack)) if _is_relative_to(path, pack) else str(path) for path in model_paths],
+            "issues": model_detail.get("issues", []),
+            "details": {key: value for key, value in model_detail.items() if key not in {"passed", "issues"}},
+        },
+        "summary_stats": {
+            "status": "passed" if summary_detail.get("passed") else "failed",
+            "tier_b_status": "passed" if summary_detail.get("passed") else "failed",
+            "tier_a_status": "passed" if summary_detail.get("passed") else "failed",
+            "paths": [str(path.relative_to(pack)) if _is_relative_to(path, pack) else str(path) for path in summary_paths],
+            "issues": summary_detail.get("issues", []),
+            "details": {key: value for key, value in summary_detail.items() if key not in {"passed", "issues"}},
+        },
+        "rdd_bandwidth": {
+            "status": "passed" if bandwidth_path.exists() else "failed",
+            "tier_b_status": "passed" if bandwidth_path.exists() else "failed",
+            "tier_a_status": "passed" if bandwidth_path.exists() else "failed",
+            "paths": ["rdd_bandwidth.csv"] if bandwidth_path.exists() else [],
+            "issues": [] if bandwidth_path.exists() else ["rdd_bandwidth_file_missing"],
+            "details": {"artifact_manifest_entry": bool(by_path.get("rdd_bandwidth.csv"))},
+        },
+        "rdd_diagnostics": {
+            "status": "passed" if diagnostics_path.exists() else "failed",
+            "tier_b_status": "passed" if diagnostics_path.exists() else "failed",
+            "tier_a_status": "passed" if density.get("status") in {"passed", "computed"} and covariates.get("status") in {"passed", "computed"} else "failed",
+            "paths": ["rdd_diagnostics.json"] if diagnostics_path.exists() else [],
+            "issues": _rdd_diagnostic_issues(diagnostics),
+            "details": {
+                "density_test_status": density.get("status"),
+                "covariate_continuity_status": covariates.get("status"),
+            },
+        },
+    }
+
+
+def _rdd_diagnostic_issues(diagnostics: dict[str, Any]) -> list[str]:
+    if not diagnostics:
+        return ["rdd_diagnostics_file_missing"]
+    issues: list[str] = []
+    density = diagnostics.get("density_test") if isinstance(diagnostics.get("density_test"), dict) else {}
+    covariates = diagnostics.get("covariate_continuity") if isinstance(diagnostics.get("covariate_continuity"), dict) else {}
+    if density.get("status") not in {"passed", "computed"}:
+        issues.append("rdd_density_test_not_computed")
+    if covariates.get("status") not in {"passed", "computed"}:
+        issues.append("rdd_covariate_continuity_not_computed")
+    return issues
+
+
+def _rdd_missing_artifacts(checks: dict[str, Any], *, tier: str) -> list[str]:
+    required = {"model_table", "summary_stats", "rdd_bandwidth", "rdd_diagnostics"}
+    missing: list[str] = []
+    for name in sorted(required):
+        check = checks.get(name)
+        if not check or check.get(f"tier_{tier}_status") != "passed":
+            missing.append(name)
+    return missing
 
 
 def _did_artifact_content_checks(pack: Path, evidence: dict[str, Any]) -> dict[str, Any]:

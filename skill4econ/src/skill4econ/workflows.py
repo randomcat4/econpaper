@@ -74,6 +74,37 @@ def _float_or_none(value: Any) -> float | None:
     return None if math.isnan(result) else result
 
 
+def _benjamini_hochberg_rows(rows: list[dict[str, Any]], *, family: str) -> list[dict[str, Any]]:
+    indexed: list[tuple[int, float]] = []
+    for idx, row in enumerate(rows):
+        p_value = _float_or_none(row.get("p_value"))
+        if row.get("status") == "computed" and p_value is not None:
+            indexed.append((idx, min(max(p_value, 0.0), 1.0)))
+    if not indexed:
+        return []
+    m = len(indexed)
+    sorted_pairs = sorted(indexed, key=lambda item: item[1], reverse=True)
+    adjusted_by_idx: dict[int, float] = {}
+    running = 1.0
+    for rank_from_end, (idx, p_value) in enumerate(sorted_pairs, 1):
+        rank = m - rank_from_end + 1
+        running = min(running, p_value * m / rank)
+        adjusted_by_idx[idx] = min(max(running, 0.0), 1.0)
+    return [
+        {
+            "family": family,
+            "dimension": row.get("dimension"),
+            "group": row.get("group"),
+            "raw_p_value": _float_or_none(row.get("p_value")),
+            "bh_q_value": adjusted_by_idx[idx],
+            "method": "benjamini_hochberg",
+            "hypotheses_in_family": m,
+        }
+        for idx, row in enumerate(rows)
+        if idx in adjusted_by_idx
+    ]
+
+
 def _configured_placebo_tests(spec: dict[str, Any]) -> list[dict[str, str]]:
     raw = spec.get("placebo_tests") or spec.get("placebo_checks") or []
     if isinstance(raw, (str, dict)):
@@ -584,14 +615,25 @@ def _prepare_did_inputs(ctx: RunContext) -> dict[str, Any]:
         )
         for cohort, count in cohorts.items():
             treatment_rows.append({"metric": "cohort_entities", "cohort": cohort, "value": int(count)})
-        warnings.append(
-            _warning(
-                "yellow",
-                "twfe_staggered_heterogeneity",
-                "TWFE is being used with staggered adoption and may be sensitive to heterogeneous treatment effects.",
-                action="Use csdid/drdid or another staggered DID alternative before treating the run as paper-ready.",
+        requested_estimators = {
+            str(item)
+            for item in (spec.get("estimators") or spec.get("did_estimators") or [])
+        }
+        excluded_estimators = {str(item) for item in (spec.get("exclude_estimators") or [])}
+        twfe_requested = bool(requested_estimators.intersection({"twfe", "event_study_twfe"}))
+        twfe_default_possible = not requested_estimators and not {
+            "twfe",
+            "event_study_twfe",
+        }.issubset(excluded_estimators)
+        if twfe_requested or twfe_default_possible:
+            warnings.append(
+                _warning(
+                    "yellow",
+                    "twfe_staggered_heterogeneity",
+                    "TWFE is being used with staggered adoption and may be sensitive to heterogeneous treatment effects.",
+                    action="Use csdid/drdid or another staggered DID alternative before treating the run as paper-ready.",
+                )
             )
-        )
 
     cluster_count = int(analysis[cluster].nunique(dropna=True)) if cluster else 0
     data_summary["cluster"] = cluster
@@ -711,9 +753,28 @@ def _prepare_did_inputs(ctx: RunContext) -> dict[str, Any]:
             )
         )
 
+    analysis_columns = [
+        id_col,
+        time_col,
+        y,
+        *controls,
+        cluster,
+        treat_col,
+        post_col,
+        gvar_col,
+        *diagnostic_columns,
+        "_s4e_time_numeric",
+        "_s4e_gvar",
+        "_s4e_treat",
+        "_s4e_post",
+        "_s4e_event_time",
+    ]
+    analysis_columns = [col for col in dict.fromkeys(analysis_columns) if col and col in analysis.columns]
+    model_analysis = analysis.loc[:, analysis_columns].copy()
     analysis_path = ctx.artifact("analysis_data.csv")
-    analysis.to_csv(analysis_path, index=False, encoding="utf-8-sig")
+    model_analysis.to_csv(analysis_path, index=False, encoding="utf-8-sig")
     data_summary["analysis_data"] = str(analysis_path)
+    data_summary["analysis_columns"] = analysis_columns
     summary_path = _write_summary_stats(
         ctx,
         analysis,
@@ -954,6 +1015,29 @@ def _collect_model_tables(
             combined.append(row)
     _write_csv(ctx.artifact("model_table.csv"), combined)
     return combined
+
+
+def _select_event_rows(combined: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    model_priority = {
+        "cs_did_attgt_py": 0,
+        "cs_did_attgt": 0,
+        "did_imputation_event": 1,
+        "did_event_study": 2,
+    }
+    rows_by_model: dict[str, list[dict[str, Any]]] = {}
+    for row in combined:
+        term = str(row.get("term", ""))
+        if _parse_event_term(term) is None:
+            continue
+        model = str(row.get("model") or "")
+        if model not in model_priority:
+            continue
+        rows_by_model.setdefault(model, []).append(row)
+    for model in sorted(rows_by_model, key=lambda name: model_priority[name]):
+        rows = rows_by_model[model]
+        if rows:
+            return rows
+    return []
 
 
 def _write_summary_stats(
@@ -1317,6 +1401,9 @@ def _write_heterogeneity(ctx: RunContext, prepared: dict[str, Any]) -> tuple[str
         )
     path = ctx.artifact("heterogeneity.csv")
     _write_csv(path, rows)
+    adjusted_rows = _benjamini_hochberg_rows(rows, family="configured_heterogeneity")
+    if adjusted_rows:
+        _write_csv(ctx.artifact("heterogeneity_multiple_testing.csv"), adjusted_rows)
     return str(path), warnings, bool(computed_dimensions)
 
 
@@ -2499,11 +2586,7 @@ def did_paper_run(ctx: RunContext) -> WorkflowResult:
             )
 
     combined = _collect_model_tables(ctx, step_results, prepared=prepared)
-    event_rows = [
-        row
-        for row in combined
-        if row.get("model") == "did_event_study" and _parse_event_term(str(row.get("term", ""))) is not None
-    ]
+    event_rows = _select_event_rows(combined)
     event_study_path = _write_event_study_table(ctx, event_rows)
     pretrend_path = _write_pretrend_test(ctx, event_rows, int(prepared.get("base_period") or -1))
     figure = _write_event_plot(ctx, event_rows)

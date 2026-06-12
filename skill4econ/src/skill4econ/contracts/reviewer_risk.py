@@ -63,6 +63,8 @@ STANDARD_RISK_CODES = {
     "PSM_OVERLAP_WEAK",
     "IPW_EXTREME_WEIGHTS",
     "IPW_LOW_EFFECTIVE_SAMPLE_SIZE",
+    "IV_FIRST_STAGE_MISSING",
+    "IV_WEAK_INSTRUMENT",
     "BACKEND_MISSING_DEPENDENCY",
     "BACKEND_PARSE_FAILED",
     "BACKEND_RESULT_MISSING",
@@ -70,11 +72,12 @@ STANDARD_RISK_CODES = {
     "BACKEND_INVALID_RESULT",
     "BACKEND_ERROR",
     "FALLBACK_ESTIMATOR_NOT_PAPER_READY",
+    "FEW_CLUSTERS_INFERENCE_FRAGILE",
     "SDM_IMPACTS_MISSING",
     "PPMLHDFE_MISSING",
     "LOCAL_MORAN_PERMUTATION_NOT_RUN",
-    "SPATIAL_HAC_UNIFORM_KERNEL",
     "PSM_NAIVE_SE_NOT_ABADIE_IMBENS",
+    "SC_PLACEBO_TOO_FEW_DONORS",
     "RANK_DEFICIENT_DESIGN",
     "MODEL_NOT_IDENTIFIED",
     "MEDIATOR_TIMING_INVALID",
@@ -95,6 +98,7 @@ STANDARD_RISK_CODES = {
     "DATA_CONTRACT_FAILED",
     "DATA_CONTRACT_ID_TIME_NOT_UNIQUE",
     "ESTIMATOR_STEP_FAILED",
+    "EVENT_PLOT_NOT_GENERATED",
     "SLOW_MATRIX_EXPECTATION_MISMATCH",
 }
 
@@ -121,6 +125,14 @@ LEGACY_CODE_MAP = {
     "data_contract_failed": "DATA_CONTRACT_FAILED",
     "data_contract_warning": "DATA_CONTRACT_FAILED",
     "did_imputation_failed": "DID_IMPUTATION_FAILED",
+    "cs_did_attgt_failed": "ESTIMATOR_STEP_FAILED",
+    "csdid_failed": "ESTIMATOR_STEP_FAILED",
+    "did_event_study_failed": "ESTIMATOR_STEP_FAILED",
+    "did_twfe_event_failed": "ESTIMATOR_STEP_FAILED",
+    "event_study_twfe_failed": "ESTIMATOR_STEP_FAILED",
+    "twfe_failed": "ESTIMATOR_STEP_FAILED",
+    "drdid_failed": "ESTIMATOR_STEP_FAILED",
+    "event_plot_not_generated": "EVENT_PLOT_NOT_GENERATED",
     "did_design_declaration_mismatch": "DID_DESIGN_DECLARATION_MISMATCH",
     "continuous_treatment_not_supported": "CONTINUOUS_TREATMENT_NOT_SUPPORTED",
     "treatment_reversal": "TREATMENT_REVERSAL",
@@ -154,10 +166,12 @@ LEGACY_CODE_MAP = {
     "psm_overlap_weak": "PSM_OVERLAP_WEAK",
     "ipw_extreme_weights": "IPW_EXTREME_WEIGHTS",
     "ipw_low_effective_sample_size": "IPW_LOW_EFFECTIVE_SAMPLE_SIZE",
+    "iv_first_stage_missing": "IV_FIRST_STAGE_MISSING",
+    "iv_weak_instrument": "IV_WEAK_INSTRUMENT",
     "fallback_estimator_not_paper_ready": "FALLBACK_ESTIMATOR_NOT_PAPER_READY",
     "local_moran_permutation_not_run": "LOCAL_MORAN_PERMUTATION_NOT_RUN",
-    "spatial_hac_uniform_kernel": "SPATIAL_HAC_UNIFORM_KERNEL",
     "psm_naive_se_not_abadie_imbens": "PSM_NAIVE_SE_NOT_ABADIE_IMBENS",
+    "sc_placebo_too_few_donors": "SC_PLACEBO_TOO_FEW_DONORS",
     "rank_deficient_design": "RANK_DEFICIENT_DESIGN",
     "model_not_identified": "MODEL_NOT_IDENTIFIED",
 }
@@ -168,6 +182,10 @@ def _risk_scope(code: str) -> str:
         return "did"
     if code.startswith("PSM_") or code.startswith("IPW_") or code in {"POOR_OVERLAP", "BALANCE_STILL_POOR"}:
         return "psm"
+    if code.startswith("IV_"):
+        return "iv"
+    if code.startswith("SC_"):
+        return "synthetic_control"
     if code.startswith("SPATIAL_") or code.startswith("W_SENSITIVITY") or code in {
         "CONTROL_GROUP_CONTAMINATED",
         "EXPOSURE_CONTROL_DEFINITION_WEAK",
@@ -177,6 +195,8 @@ def _risk_scope(code: str) -> str:
         return "spatial"
     if code.startswith("BACKEND_") or code in {"SDM_IMPACTS_MISSING", "PPMLHDFE_MISSING"}:
         return "adapter"
+    if code in {"FEW_CLUSTERS_INFERENCE_FRAGILE"}:
+        return "inference"
     if code.startswith("DEA_"):
         return "dea"
     if code in {"RANK_DEFICIENT_DESIGN", "MODEL_NOT_IDENTIFIED", "ESTIMATOR_STEP_FAILED"}:
@@ -198,6 +218,8 @@ def _claim_degradation(code: str, severity: str) -> str:
         "IPW_EXTREME_WEIGHTS",
         "EXTREME_IPW_WEIGHTS",
         "IPW_LOW_EFFECTIVE_SAMPLE_SIZE",
+        "IV_FIRST_STAGE_MISSING",
+        "IV_WEAK_INSTRUMENT",
         "LOW_EFFECTIVE_SAMPLE_SIZE",
         "CONTROL_GROUP_CONTAMINATED",
         "EXPOSURE_CONTROL_DEFINITION_WEAK",
@@ -250,9 +272,13 @@ class ReviewerRiskCollector:
         message: str,
         required_fix: str,
         affected_artifacts: list[str] | None = None,
+        claim_degradation: str | None = None,
     ) -> None:
         normalized = normalize_code(code)
         sev = normalize_severity(severity)
+        degradation = str(claim_degradation or _claim_degradation(normalized, sev))
+        if degradation not in {"none", "supplementary_only", "not_for_claim", "failed"}:
+            degradation = _claim_degradation(normalized, sev)
         self.risks.append(
             {
                 "code": normalized,
@@ -260,7 +286,7 @@ class ReviewerRiskCollector:
                 "scope": _risk_scope(normalized),
                 "message": str(message),
                 "required_fix": str(required_fix or ""),
-                "claim_degradation": _claim_degradation(normalized, sev),
+                "claim_degradation": degradation,
                 "affected_artifacts": list(affected_artifacts or []),
                 "known_code": normalized in STANDARD_RISK_CODES,
             }
@@ -343,5 +369,6 @@ class ReviewerRiskCollector:
                 message=str(warning.get("message") or ""),
                 required_fix=str(warning.get("action") or warning.get("required_fix") or "Report this limitation."),
                 affected_artifacts=warning.get("affected_artifacts") or None,
+                claim_degradation=warning.get("claim_degradation"),
             )
         return collector

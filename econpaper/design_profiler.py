@@ -193,6 +193,10 @@ def _diagnostics_for_design(design_type: str, artifacts: set[str]) -> tuple[list
             required["modern_staggered_estimator"] = [
                 ("staggered",),
                 ("callaway",),
+                ("cs_did",),
+                ("att_gt",),
+                ("differences",),
+                ("csdid",),
                 ("sun", "abraham"),
                 ("did_imputation",),
                 ("drdid",),
@@ -206,7 +210,7 @@ def _diagnostics_for_design(design_type: str, artifacts: set[str]) -> tuple[list
     elif "rdd" in design or "rd" == design:
         required = {
             "rd_plot": [("rd", "plot")],
-            "manipulation_test": [("manipulation",)],
+            "manipulation_test": [("manipulation",), ("density", "test"), ("rdd", "density")],
             "bandwidth_sensitivity": [("bandwidth",)],
             "covariate_continuity": [("covariate", "continuity")],
         }
@@ -320,7 +324,7 @@ def _checked_design(design_type: str, artifacts: set[str]) -> str:
         return "declared_did_with_twfe_artifacts"
     if _contains(artifacts, "iv"):
         return "iv_artifacts_present"
-    if _contains(artifacts, "rdd") or _contains(artifacts, "rd"):
+    if _contains(artifacts, "rdd"):
         return "rdd_artifacts_present"
     return "structured_artifacts_present"
 

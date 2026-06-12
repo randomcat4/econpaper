@@ -26,12 +26,14 @@ did:
     stata_method: dr_did_2x2
 
   cs_did_attgt:
-    backend: stata_csdid
+    backend: stata_csdid_or_python_package
     role: main_if_staggered
     allowed_designs: ["staggered_adoption"]
     main_allowed: true
-    engines: ["stata"]
+    engines: ["stata", "python"]
     stata_method: cs_did_attgt
+    python_method: cs_did_attgt_py
+    python_package: differences
 
   csdid:
     backend: stata_csdid

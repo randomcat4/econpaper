@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "estimator": "fixest::feols",
+  "model_table": [
+    {
+      "term": "_did_treat_post",
+      "coef": 1.25,
+      "std_error": 0.1,
+      "p_value": 0.001,
+      "t_stat": 12.5
+    }
+  ]
+}

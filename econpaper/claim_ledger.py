@@ -334,12 +334,20 @@ def _outcome_variables_from_intake(intake_profile: dict[str, Any]) -> list[str]:
 
 def _is_effect_term(variable: str) -> bool:
     lowered = variable.lower()
-    return bool(re.fullmatch(r"event_(?:m)?\d+", lowered)) or lowered in {
+    return bool(
+        re.fullmatch(r"event_-?(?:m)?\d+", lowered)
+        or re.fullmatch(r"att_\d+", lowered)
+        or re.fullmatch(r"att_gt_g\d+_b\d+_t\d+", lowered)
+    ) or lowered in {
         "_did_treat_post",
         "did_treat_post",
         "treat_post",
         "post_treat",
         "att",
+        "robust",
+        "bias-corrected",
+        "bias_corrected",
+        "conventional",
         "main_effect",
     }
 
@@ -361,8 +369,15 @@ def _label_for_variable(variable: str, intake_profile: dict[str, Any]) -> str:
     for entry in intake_profile.get("outcome_magnitude_context", []) if isinstance(intake_profile, dict) else []:
         if isinstance(entry, dict) and entry.get("variable") == variable and entry.get("label"):
             return str(entry["label"])
-    if re.fullmatch(r"event_(?:m)?\d+", variable):
-        if variable.startswith("event_m"):
+    lowered = variable.lower()
+    if re.fullmatch(r"att_\d+", lowered):
+        return "the simple aggregated ATT"
+    if re.fullmatch(r"att_gt_g\d+_b\d+_t\d+", lowered):
+        return "a cohort-time ATT(g,t) estimate"
+    if lowered in {"robust", "bias-corrected", "bias_corrected", "conventional"}:
+        return "the rdrobust cutoff estimate"
+    if re.fullmatch(r"event_-?(?:m)?\d+", lowered):
+        if lowered.startswith("event_m") or lowered.startswith("event_-"):
             return "a pre-treatment event-study coefficient"
         if variable == "event_0":
             return "the treatment-period event-study coefficient"

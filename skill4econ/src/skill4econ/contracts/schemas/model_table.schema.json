@@ -1,5 +1,59 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "skill4econ model_table",
-  "description": "CSV table must include at least one header row. JSON model tables should be arrays or objects."
+  "description": "CSV table must include at least one header row. JSON model tables should be arrays or objects. Estimator rows may include t-based inference columns.",
+  "oneOf": [
+    {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/model_table_row"
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/model_table_row"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "model_table_row": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "term": {
+          "type": "string"
+        },
+        "coef": {
+          "type": ["number", "null"]
+        },
+        "std_error": {
+          "type": ["number", "null"]
+        },
+        "t_stat": {
+          "type": ["number", "null"]
+        },
+        "p_value": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ci_low": {
+          "type": ["number", "null"]
+        },
+        "ci_high": {
+          "type": ["number", "null"]
+        },
+        "df_inference": {
+          "type": ["number", "null"]
+        }
+      }
+    }
+  }
 }

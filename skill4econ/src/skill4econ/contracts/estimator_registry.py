@@ -30,6 +30,31 @@ def load_estimator_registry(path: str | Path | None = None) -> dict[str, Any]:
     return payload
 
 
+def _module_available(dependency_report: dict[str, Any], name: str) -> bool:
+    modules = dependency_report.get("modules") if isinstance(dependency_report.get("modules"), dict) else {}
+    info = modules.get(name)
+    return bool(isinstance(info, dict) and info.get("available"))
+
+
+def _python_backend_available(defn: dict[str, Any], dependency_report: dict[str, Any]) -> tuple[bool, str]:
+    packages_any = [str(item) for item in (defn.get("python_packages_any") or [])]
+    package = defn.get("python_package")
+    packages_all = [str(item) for item in (defn.get("python_packages") or [])]
+    if package:
+        packages_all.append(str(package))
+    if packages_any:
+        available = [name for name in packages_any if _module_available(dependency_report, name)]
+        if available:
+            return True, f"python package available: {available[0]}"
+        return False, f"backend_unavailable: install one of {','.join(packages_any)}"
+    if packages_all:
+        missing = [name for name in packages_all if not _module_available(dependency_report, name)]
+        if missing:
+            return False, f"backend_unavailable: install {','.join(missing)}"
+        return True, f"python packages available: {','.join(packages_all)}"
+    return True, "python backend available"
+
+
 def _backend_available(defn: dict[str, Any], dependency_report: dict[str, Any], engine_policy: str) -> tuple[bool, str]:
     engines = [str(item).lower() for item in defn.get("engines") or []]
     if engine_policy == "python":
@@ -38,15 +63,20 @@ def _backend_available(defn: dict[str, Any], dependency_report: dict[str, Any], 
         engines = [engine for engine in engines if engine == "stata"]
     if not engines:
         return False, f"engine_policy={engine_policy} excludes this estimator backend."
-    if "python" in engines:
-        return True, "python backend available"
     if "stata" in engines and dependency_report.get("stata", {}).get("available"):
         return True, "Stata executable available"
+    if "python" in engines:
+        python_available, python_reason = _python_backend_available(defn, dependency_report)
+        if python_available:
+            return True, python_reason
     if "r" in engines and dependency_report.get("r", {}).get("available"):
         return True, "Rscript available"
     missing = []
     if "stata" in engines:
         missing.append("Stata")
+    if "python" in engines:
+        _, python_reason = _python_backend_available(defn, dependency_report)
+        missing.append(python_reason.replace("backend_unavailable: ", ""))
     if "r" in engines:
         missing.append("Rscript")
     return False, f"backend_unavailable: {'/'.join(missing) or 'unknown'}"
@@ -55,12 +85,12 @@ def _backend_available(defn: dict[str, Any], dependency_report: dict[str, Any], 
 def _preferred_engine(defn: dict[str, Any], dependency_report: dict[str, Any], engine_policy: str) -> str | None:
     engines = [str(item).lower() for item in defn.get("engines") or []]
     if engine_policy == "python":
-        return "python" if "python" in engines else None
+        return "python" if "python" in engines and _python_backend_available(defn, dependency_report)[0] else None
     if engine_policy == "stata":
         return "stata" if "stata" in engines and dependency_report.get("stata", {}).get("available") else None
     if "stata" in engines and dependency_report.get("stata", {}).get("available"):
         return "stata"
-    if "python" in engines:
+    if "python" in engines and _python_backend_available(defn, dependency_report)[0]:
         return "python"
     if "r" in engines and dependency_report.get("r", {}).get("available"):
         return "r"

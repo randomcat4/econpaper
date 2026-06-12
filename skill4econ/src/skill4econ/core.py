@@ -45,7 +45,7 @@ def utc_stamp() -> str:
 def read_spec(path: Path | None) -> dict[str, Any]:
     if path is None:
         return {}
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     if path.suffix.lower() == ".json":
         data = json.loads(text)
     else:
@@ -209,6 +209,10 @@ def _build_reviewer_risk(ctx: RunContext, status: str, extra: dict[str, Any]):
     from .contracts.reviewer_risk import ReviewerRiskCollector
 
     warnings = list(extra.get("warnings") or [])
+    for key in ("inference_risks", "estimator_risks"):
+        extra_warnings = extra.get(key)
+        if isinstance(extra_warnings, list):
+            warnings.extend(item for item in extra_warnings if isinstance(item, dict))
     method_or_workflow = str(extra.get("workflow") or ctx.method)
     if method_or_workflow in EXPLORATORY_METHOD_HINTS or extra.get("estimator_is_fallback"):
         existing_codes = {str(item.get("code")) for item in warnings if isinstance(item, dict)}
@@ -540,6 +544,10 @@ def dependency_report() -> dict[str, Any]:
         "causalml": "causalml",
         "lightgbm": "lightgbm",
         "pyreadstat": "pyreadstat",
+        "pyfixest": "pyfixest",
+        "differences": "differences",
+        "rdrobust": "rdrobust",
+        "rddensity": "rddensity",
     }
     report: dict[str, Any] = {"python": sys.executable, "modules": {}}
     for name, import_name in modules.items():

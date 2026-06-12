@@ -19,6 +19,10 @@ KNOWN_ARTIFACT_TYPES = {
     "heterogeneity",
     "summary_stats",
     "figure_manifest",
+    "rdd_bandwidth",
+    "rdd_diagnostics",
+    "rdd_density_test",
+    "covariate_continuity",
     "diagnostic",
     "figure",
     "table",
@@ -40,6 +44,10 @@ TYPE_ALIASES = {
     "pre_trend": "pretrend_test",
     "eventstudy": "event_study",
     "event-study": "event_study",
+    "bandwidth": "rdd_bandwidth",
+    "density_test": "rdd_density_test",
+    "manipulation_test": "rdd_density_test",
+    "covariate_balance": "covariate_continuity",
 }
 EVIDENCE_ITEM_REQUIRED = {
     "evidence_id",
@@ -374,6 +382,14 @@ def normalize_artifact_type(raw_type: Any, path: Any = "", role: Any = "") -> st
         return "summary_stats"
     if "figures/manifest" in text or "figure_manifest" in text or "figures_manifest" in text:
         return "figure_manifest"
+    if "rdd_bandwidth" in text:
+        return "rdd_bandwidth"
+    if "rdd_diagnostics" in text:
+        return "rdd_diagnostics"
+    if "rdd_density_test" in text or "density_test" in text or "manipulation_test" in text:
+        return "rdd_density_test"
+    if "covariate_continuity" in text:
+        return "covariate_continuity"
     if cleaned in {"diagnostic", "metadata", "table", "figure"}:
         return cleaned
     if cleaned in KNOWN_ARTIFACT_TYPES:

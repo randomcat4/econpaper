@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from skill4econ.core import make_run_context
+from skill4econ.diagnostics import live_backend_certification as live_cert
 from skill4econ.python_wrappers import spatial_panel_model_adapter, spatial_spdep_lisa
 from skill4econ.validation.contract_verifier import validate_run_dir
 
@@ -29,6 +31,14 @@ def test_malformed_impact_parser_cli_fails_with_contract(tmp_path: Path) -> None
     pd.DataFrame([{"model": "SDM", "effect": "treat", "direct": 1.0}]).to_csv(malformed, index=False)
     spec = tmp_path / "spec.json"
     spec.write_text(json.dumps({"impact_decomposition": str(malformed), "output_dir": str(tmp_path / "runs")}), encoding="utf-8")
+    repo_root = Path(__file__).resolve().parents[3]
+    child_env = os.environ.copy()
+    src_root = repo_root / "skill4econ" / "src"
+    child_env["PYTHONPATH"] = (
+        str(src_root)
+        if not child_env.get("PYTHONPATH")
+        else f"{src_root}{os.pathsep}{child_env['PYTHONPATH']}"
+    )
     proc = subprocess.run(
         [
             sys.executable,
@@ -43,7 +53,8 @@ def test_malformed_impact_parser_cli_fails_with_contract(tmp_path: Path) -> None
             str(spec),
             "--run",
         ],
-        cwd=Path(__file__).resolve().parents[3],
+        cwd=repo_root,
+        env=child_env,
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -57,6 +68,23 @@ def test_malformed_impact_parser_cli_fails_with_contract(tmp_path: Path) -> None
     assert status["status"] == "failed"
     assert status["paper_readiness"] == "not_available"
     assert validate_run_dir(run_dir).status == "passed"
+
+
+def test_stata_command_probe_uses_matching_log_name_and_timeout(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_stata_do(spec, output_dir, *, name, do_text, timeout):
+        captured.update({"name": name, "do_text": do_text, "timeout": timeout})
+        return {"status": "ok", "backend_run_status": "ok", "available": True}
+
+    monkeypatch.setattr(live_cert, "_run_stata_do", fake_run_stata_do)
+
+    result = live_cert._stata_command_available({"xsmle_probe_timeout": 123}, tmp_path, "xsmle")
+
+    assert captured["name"] == "which_xsmle"
+    assert 'log using "which_xsmle.log"' in str(captured["do_text"])
+    assert captured["timeout"] == 123
+    assert result["command_name"] == "xsmle"
 
 
 def test_spdep_lisa_missing_rscript_is_missing_dependency(monkeypatch, tmp_path: Path) -> None:

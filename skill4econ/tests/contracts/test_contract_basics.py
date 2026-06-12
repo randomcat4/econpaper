@@ -43,8 +43,11 @@ def test_python_fallback_estimators_are_not_paper_ready_by_default() -> None:
         "rdd_local_linear",
         "quantile_regression",
         "threshold_panel",
+        "threshold_panel_search",
         "mediation_moderation",
+        "mediation_baron_kenny",
         "synthetic_control",
+        "synthetic_control_basic",
         "dml_plr_crossfit",
         "dml_irm_crossfit",
     ]:
@@ -56,6 +59,27 @@ def test_python_fallback_estimators_are_not_paper_ready_by_default() -> None:
         )
         assert claim["claim_level"] == "exploratory_only", method
         assert claim["paper_readiness"] == "not_for_claim", method
+        assert claim["main_claim_available"] is False, method
+
+
+def test_no_registered_python_method_escapes_claim_gate_by_name() -> None:
+    from skill4econ.python_wrappers import PYTHON_METHODS
+
+    # Only real-package estimators may default to a main estimate. Every other
+    # registered name, including invocation aliases, must be downgraded by
+    # infer_claim_contract even when the wrapper passes no explicit claim_level.
+    main_estimate_allowlist = {"panel_fe_re", "iv_2sls", "cs_did_attgt_py", "rdrobust_rdd"}
+    for method in PYTHON_METHODS:
+        if method in main_estimate_allowlist:
+            continue
+        claim = infer_claim_contract(
+            method_or_workflow=method,
+            status="ok",
+            extra={},
+            reviewer_risk={"risks": []},
+        )
+        assert claim["claim_level"] != "main_estimate", method
+        assert claim["paper_readiness"] != "paper_ready", method
         assert claim["main_claim_available"] is False, method
 
 
@@ -89,10 +113,13 @@ def test_required_risk_codes_are_registered() -> None:
             "PSM_OVERLAP_WEAK",
             "IPW_EXTREME_WEIGHTS",
             "IPW_LOW_EFFECTIVE_SAMPLE_SIZE",
+            "IV_FIRST_STAGE_MISSING",
+            "IV_WEAK_INSTRUMENT",
             "PSM_NAIVE_SE_NOT_ABADIE_IMBENS",
+            "SC_PLACEBO_TOO_FEW_DONORS",
             "FALLBACK_ESTIMATOR_NOT_PAPER_READY",
+            "FEW_CLUSTERS_INFERENCE_FRAGILE",
             "LOCAL_MORAN_PERMUTATION_NOT_RUN",
-            "SPATIAL_HAC_UNIFORM_KERNEL",
             "BACKEND_MISSING_DEPENDENCY",
             "BACKEND_PARSE_FAILED",
             "BACKEND_RESULT_MISSING",

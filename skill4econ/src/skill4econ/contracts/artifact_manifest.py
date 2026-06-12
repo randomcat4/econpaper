@@ -32,6 +32,10 @@ ECONPAPER_EVIDENCE_TYPES = {
     "heterogeneity",
     "summary_stats",
     "figure_manifest",
+    "rdd_bandwidth",
+    "rdd_diagnostics",
+    "rdd_density_test",
+    "covariate_continuity",
 }
 
 
@@ -102,6 +106,14 @@ def infer_econpaper_evidence_type(path: Path, role: str = "", workflow: str = ""
         return "summary_stats"
     if name in {"manifest.yaml", "manifest.yml", "manifest.json"} and "figures/" in rel:
         return "figure_manifest"
+    if name == "rdd_bandwidth.csv":
+        return "rdd_bandwidth"
+    if name == "rdd_diagnostics.json":
+        return "rdd_diagnostics"
+    if name in {"rdd_density_test.json", "rdd_density_test.csv"}:
+        return "rdd_density_test"
+    if name in {"covariate_continuity.json", "covariate_continuity.csv"}:
+        return "covariate_continuity"
     return None
 
 

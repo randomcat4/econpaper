@@ -60,7 +60,7 @@ def compile_pack(
     *,
     venue: str | None = None,
     out_dir: str | Path | None = None,
-    latex_command: str = "pdflatex",
+    latex_command: str = "auto",
     max_attempts: int = 2,
 ) -> CompileResult:
     source = Path(pack_dir)
@@ -79,7 +79,10 @@ def compile_pack(
     result.main_md = str(main_md)
     result.main_tex = str(main_tex)
 
-    command_path = shutil.which(latex_command)
+    resolved = _resolve_latex_command(latex_command)
+    result.report["latex_command_requested"] = latex_command
+    result.report["latex_command_selected"] = resolved
+    command_path = resolved.get("path")
     if not command_path:
         result.status = "fallback"
         result.add_issue("latex_command_unavailable", "style_advice", f"LaTeX command `{latex_command}` is unavailable; markdown fallback produced.")
@@ -88,7 +91,7 @@ def compile_pack(
 
     for attempt in range(1, max_attempts + 1):
         proc = subprocess.run(
-            [command_path, "-interaction=nonstopmode", "main.tex"],
+            [command_path, *resolved["args"]],
             cwd=target,
             text=True,
             encoding="utf-8",
@@ -121,6 +124,32 @@ def compile_pack(
     result.add_issue("latex_compile_failed", "style_advice", "LaTeX compile did not produce main.pdf; markdown fallback remains available.", str(main_tex))
     _write_outputs(target, result)
     return result
+
+
+def _resolve_latex_command(latex_command: str) -> dict[str, Any]:
+    requested = (latex_command or "auto").strip()
+    if requested == "auto":
+        latexmk = shutil.which("latexmk")
+        if latexmk and shutil.which("perl"):
+            return {
+                "engine": "latexmk-xelatex",
+                "path": latexmk,
+                "args": ["-xelatex", "-interaction=nonstopmode", "-halt-on-error", "main.tex"],
+            }
+        pdflatex = shutil.which("pdflatex")
+        return {
+            "engine": "pdflatex",
+            "path": pdflatex,
+            "args": ["-interaction=nonstopmode", "-halt-on-error", "main.tex"],
+            "fallback_reason": "latexmk_unusable_without_perl" if latexmk else "latexmk_unavailable",
+        }
+    command_path = shutil.which(requested)
+    command_name = Path(requested).name.lower()
+    if command_name.startswith("latexmk"):
+        args = ["-xelatex", "-interaction=nonstopmode", "-halt-on-error", "main.tex"]
+    else:
+        args = ["-interaction=nonstopmode", "-halt-on-error", "main.tex"]
+    return {"engine": command_name, "path": command_path, "args": args}
 
 
 def _assemble_main_md(pack_dir: Path) -> Path:

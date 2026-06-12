@@ -246,3 +246,49 @@ def test_did_estimator_router_respects_design_and_backends() -> None:
     skipped = {item["estimator"]: item["reason"] for item in route["skipped_estimators"]}
     assert "cs_did_attgt" in skipped
     assert any(item["engine"] == "python" for item in route["selected_estimators"])
+
+
+def test_did_estimator_router_offers_python_cs_when_real_package_available() -> None:
+    dep = {
+        "stata": {"available": False},
+        "r": {"available": False},
+        "modules": {
+            "differences": {"available": True, "version": "test"},
+            "pyfixest": {"available": False},
+        },
+    }
+    staggered = detect_did_design(
+        _timing_panel({1: 2018, 2: 2019, 3: 2020, 4: 0}, [2015, 2016, 2017, 2018, 2019, 2020]),
+        {"id": "unit", "time": "year", "y": "y", "gvar": "gvar"},
+    )
+
+    route = route_did_estimators(staggered, spec={"engine_policy": "python"}, dependency_report=dep)
+    selected = {item["estimator"]: item for item in route["selected_estimators"]}
+    skipped_reasons = {item["reason"] for item in route["skipped_estimators"]}
+
+    assert selected["cs_did_attgt"]["engine"] == "python"
+    assert selected["cs_did_attgt"]["method"] == "cs_did_attgt_py"
+    assert "no_modern_staggered_estimator_selected" not in skipped_reasons
+
+
+def test_did_estimator_router_keeps_python_cs_closed_without_real_package() -> None:
+    dep = {
+        "stata": {"available": False},
+        "r": {"available": False},
+        "modules": {
+            "differences": {"available": False},
+            "pyfixest": {"available": False},
+        },
+    }
+    staggered = detect_did_design(
+        _timing_panel({1: 2018, 2: 2019, 3: 2020, 4: 0}, [2015, 2016, 2017, 2018, 2019, 2020]),
+        {"id": "unit", "time": "year", "y": "y", "gvar": "gvar"},
+    )
+
+    route = route_did_estimators(staggered, spec={"engine_policy": "python"}, dependency_report=dep)
+    selected = {item["estimator"]: item for item in route["selected_estimators"]}
+    skipped = {item["estimator"]: item["reason"] for item in route["skipped_estimators"]}
+
+    assert "cs_did_attgt" not in selected
+    assert "install differences" in skipped["cs_did_attgt"]
+    assert "no_modern_staggered_estimator_selected" in set(skipped.values())

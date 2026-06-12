@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -189,18 +190,20 @@ def _run_stata_do(
 
 
 def _stata_command_available(spec: dict[str, Any], output_dir: Path, command: str) -> dict[str, Any]:
+    probe_name = f"which_{command}"
+    timeout = int(spec.get(f"{command}_probe_timeout", spec.get("stata_command_probe_timeout", 60)))
     do_text = f"""
 version 17
 set more off
 {_vendor_adopath_block()}
-log using "{command}_which.log", replace text
+log using "{probe_name}.log", replace text
 capture which {command}
 local rc = _rc
 display "{command}_rc=" `rc'
 log close
 exit `rc'
 """
-    result = _run_stata_do(spec, output_dir, name=f"which_{command}", do_text=do_text, timeout=60)
+    result = _run_stata_do(spec, output_dir, name=probe_name, do_text=do_text, timeout=timeout)
     if result.get("status") == "backend_error":
         result["status"] = "missing_dependency"
         result["backend_run_status"] = "missing_dependency"
@@ -459,6 +462,11 @@ def run_r_backend_live_probes(spec: dict[str, Any], output_dir: Path) -> dict[st
         "r_spdep": ["spdep"],
         "r_splm": ["splm", "spdep"],
         "r_spatialreg": ["spatialreg", "spdep"],
+        "r_did": ["did"],
+        "r_drdid": ["DRDID"],
+        "r_didimputation": ["didimputation"],
+        "r_honestdid": ["HonestDiD"],
+        "r_fixest": ["fixest"],
     }
     rows = []
     results: dict[str, Any] = {}
@@ -481,6 +489,189 @@ def run_r_backend_live_probes(spec: dict[str, Any], output_dir: Path) -> dict[st
     return {"status": "ok" if any(row["status"] == "ok" for row in rows) else "missing_dependency", "rows": rows, "results": results}
 
 
+def run_python_differences_tiny_certification(spec: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    tables = output_dir / "tables"
+    try:
+        import numpy as np
+        import pandas as pd
+        from differences import ATTgt
+    except Exception as exc:
+        row = {
+            "backend": "python_differences",
+            "status": "missing_dependency",
+            "available": False,
+            "error_code": "BACKEND_MISSING_DEPENDENCY",
+            "message": f"differences import failed: {exc}",
+        }
+        _write_csv(tables / "python_differences_certification.csv", [row])
+        return {"status": "missing_dependency", "rows": [row], "error": str(exc)}
+
+    rows: list[dict[str, Any]] = []
+    for unit in range(1, 13):
+        cohort = 2020 if unit <= 4 else (2021 if unit <= 8 else np.nan)
+        for year in range(2018, 2023):
+            treated = 0 if np.isnan(cohort) else int(year >= cohort)
+            y = 1.0 + 0.05 * (year - 2018) + 0.02 * unit - 0.12 * treated
+            rows.append({"unit_id": unit, "year": year, "g": cohort, "y": y})
+    data = pd.DataFrame(rows).set_index(["unit_id", "year"]).sort_index()
+    data_path = tables / "python_differences_tiny_panel.csv"
+    data.reset_index().to_csv(data_path, index=False, encoding="utf-8-sig")
+    try:
+        estimator = ATTgt(data=data, cohort_column="g", base_period=str(spec.get("differences_base_period") or "varying"))
+        fit = estimator.fit(
+            formula="y",
+            control_group=str(spec.get("differences_control_group") or "never_treated"),
+            est_method="reg",
+            boot_iterations=0,
+            n_jobs=1,
+            progress_bar=False,
+        )
+        simple = estimator.aggregate(type_of_aggregation="simple", overall=True, boot_iterations=0, n_jobs=1)
+        event = estimator.aggregate(type_of_aggregation="event", overall=False, boot_iterations=0, n_jobs=1)
+        simple_frame = simple.to_pandas() if hasattr(simple, "to_pandas") else pd.DataFrame(simple)
+        event_frame = event.to_pandas() if hasattr(event, "to_pandas") else pd.DataFrame(event)
+        simple_frame.reset_index().to_csv(tables / "python_differences_simple_att.csv", index=False, encoding="utf-8-sig")
+        event_frame.reset_index().to_csv(tables / "python_differences_event_att.csv", index=False, encoding="utf-8-sig")
+        fit_frame = fit.to_pandas() if hasattr(fit, "to_pandas") else pd.DataFrame(fit)
+        fit_frame.reset_index().to_csv(tables / "python_differences_att_gt.csv", index=False, encoding="utf-8-sig")
+        row = {
+            "backend": "python_differences",
+            "status": "ok",
+            "available": True,
+            "error_code": "",
+            "message": "differences.ATTgt import, fit, simple aggregation, and event aggregation completed.",
+            "data_path": "tables/python_differences_tiny_panel.csv",
+            "simple_path": "tables/python_differences_simple_att.csv",
+            "event_path": "tables/python_differences_event_att.csv",
+        }
+    except Exception as exc:
+        row = {
+            "backend": "python_differences",
+            "status": "backend_error",
+            "available": True,
+            "error_code": "BACKEND_ERROR",
+            "message": f"differences.ATTgt tiny fit failed: {exc}",
+            "data_path": "tables/python_differences_tiny_panel.csv",
+        }
+    _write_csv(tables / "python_differences_certification.csv", [row])
+    return {"status": row["status"], "rows": [row]}
+
+
+def run_python_rdrobust_tiny_certification(spec: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    tables = output_dir / "tables"
+    try:
+        import numpy as np
+        import pandas as pd
+        from rdrobust import rdrobust
+    except Exception as exc:
+        row = {
+            "backend": "python_rdrobust",
+            "status": "missing_dependency",
+            "available": False,
+            "error_code": "BACKEND_MISSING_DEPENDENCY",
+            "message": f"rdrobust import failed: {exc}",
+        }
+        _write_csv(tables / "python_rdrobust_certification.csv", [row])
+        return {"status": "missing_dependency", "rows": [row], "error": str(exc)}
+
+    x = np.array([value / 10 for value in range(-40, 0)] + [value / 10 for value in range(1, 41)], dtype=float)
+    y = 2.0 + 0.3 * x + 0.45 * (x >= 0).astype(float) + 0.01 * np.sin(np.arange(x.shape[0]))
+    try:
+        result = rdrobust(y, x, c=float(spec.get("rdd_cutoff", 0.0)))
+        row = {
+            "backend": "python_rdrobust",
+            "status": "ok",
+            "available": True,
+            "error_code": "",
+            "message": "rdrobust import and tiny cutoff fit completed.",
+            "coef": _rdrobust_value(result, ["coef", "Estimate", "tau.bc", "tau.us"]),
+            "se": _rdrobust_value(result, ["se", "Std. Err.", "se.rb", "se.us"]),
+        }
+    except Exception as exc:
+        row = {
+            "backend": "python_rdrobust",
+            "status": "backend_error",
+            "available": True,
+            "error_code": "BACKEND_ERROR",
+            "message": f"rdrobust tiny fit failed: {exc}",
+        }
+    _write_csv(tables / "python_rdrobust_certification.csv", [row])
+    return {"status": row["status"], "rows": [row]}
+
+
+def run_python_rddensity_tiny_certification(spec: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    tables = output_dir / "tables"
+    try:
+        import numpy as np
+        import rddensity
+    except Exception as exc:
+        row = {
+            "backend": "python_rddensity",
+            "status": "missing_dependency",
+            "available": False,
+            "error_code": "BACKEND_MISSING_DEPENDENCY",
+            "message": f"rddensity import failed: {exc}",
+        }
+        _write_csv(tables / "python_rddensity_certification.csv", [row])
+        return {"status": "missing_dependency", "rows": [row], "error": str(exc)}
+
+    x = np.array([value / 10 for value in range(-40, 0)] + [value / 10 for value in range(1, 41)], dtype=float)
+    try:
+        result = rddensity.rddensity(x, c=float(spec.get("rdd_cutoff", 0.0)))
+        test = getattr(result, "test", None)
+        p_value = _series_value(test, "p_jk")
+        row = {
+            "backend": "python_rddensity",
+            "status": "ok",
+            "available": True,
+            "error_code": "",
+            "message": "rddensity import and tiny density continuity test completed.",
+            "p_value": p_value,
+            "n_left": _series_value(getattr(result, "n", None), "left"),
+            "n_right": _series_value(getattr(result, "n", None), "right"),
+        }
+    except Exception as exc:
+        row = {
+            "backend": "python_rddensity",
+            "status": "backend_error",
+            "available": True,
+            "error_code": "BACKEND_ERROR",
+            "message": f"rddensity tiny fit failed: {exc}",
+        }
+    _write_csv(tables / "python_rddensity_certification.csv", [row])
+    return {"status": row["status"], "rows": [row]}
+
+
+def _rdrobust_value(result: Any, candidates: list[str]) -> Any:
+    for name in candidates:
+        value = getattr(result, name, None)
+        if value is not None:
+            return str(value)
+    if isinstance(result, dict):
+        for name in candidates:
+            if name in result:
+                return str(result[name])
+    return ""
+
+
+def _series_value(container: Any, key: str) -> Any:
+    if container is None:
+        return ""
+    try:
+        if hasattr(container, "get"):
+            value = container.get(key)
+        else:
+            value = getattr(container, key, "")
+    except Exception:
+        return ""
+    try:
+        if hasattr(value, "item"):
+            return value.item()
+    except Exception:
+        pass
+    return value
+
+
 def run_live_backend_certification(
     spec: dict[str, Any],
     output_dir: str | Path,
@@ -498,12 +689,21 @@ def run_live_backend_certification(
     if not data_path.exists():
         raise ValueError(f"live_backend_certification data not found: {data_path}")
 
+    differences_result = run_python_differences_tiny_certification(spec, out)
+    rdrobust_result = run_python_rdrobust_tiny_certification(spec, out)
+    rddensity_result = run_python_rddensity_tiny_certification(spec, out)
     r_result = run_r_backend_live_probes(spec, out)
     xsmle_status = _stata_command_available(spec, out, "xsmle")
     spxt_result = run_stata_spxtregress_live_matrix(spec, out, data_path) if spec.get("run_spxtregress", True) else {"status": "skipped", "matrix_rows": [], "impact_rows": []}
     ppml_result = run_stata_ppmlhdfe_live_certification(spec, out, data_path) if spec.get("run_ppmlhdfe", True) else {"status": "skipped", "rows": []}
 
     summary_rows: list[dict[str, Any]] = []
+    for row in differences_result.get("rows") or []:
+        summary_rows.append({**row, "family": "python_modern_did_probe"})
+    for row in rdrobust_result.get("rows") or []:
+        summary_rows.append({**row, "family": "python_rdd_probe"})
+    for row in rddensity_result.get("rows") or []:
+        summary_rows.append({**row, "family": "python_rdd_density_probe"})
     for row in r_result.get("rows") or []:
         summary_rows.append({**row, "family": "r_live_probe"})
     summary_rows.append(
@@ -578,6 +778,13 @@ def run_live_backend_certification(
     payload = {
         "status": status,
         "data": str(data_path),
+        "python_differences": differences_result,
+        "python_rdrobust": rdrobust_result,
+        "python_rddensity": rddensity_result,
+        "rscript": {
+            "path": shutil.which("Rscript"),
+            "available": bool(shutil.which("Rscript")),
+        },
         "r_backends": r_result,
         "stata_xsmle": xsmle_status,
         "stata_spxtregress": spxt_result,
@@ -590,7 +797,11 @@ def run_live_backend_certification(
             "spxtregress_impacts": "tables/stata_spxtregress_live_impacts.csv",
             "ppmlhdfe": "tables/ppmlhdfe_live_certification.csv",
             "r_probe": "tables/r_live_backend_probes.csv",
+            "differences": "tables/python_differences_certification.csv",
+            "rdrobust": "tables/python_rdrobust_certification.csv",
+            "rddensity": "tables/python_rddensity_certification.csv",
         },
     }
     _write_json(out / "live_backend_certification.json", payload)
+    _write_json(out / "backend_certification.json", payload)
     return payload

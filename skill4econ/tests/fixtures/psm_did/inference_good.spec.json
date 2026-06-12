@@ -1,0 +1,11 @@
+{
+  "id": "unit",
+  "time": "year",
+  "y": "y",
+  "treat": "treat",
+  "x": ["x1", "x2"],
+  "pscore_col": "ps",
+  "bootstrap_reps": 99,
+  "bootstrap_seed": 20260612,
+  "with_replacement": true
+}

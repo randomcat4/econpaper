@@ -8,6 +8,7 @@ from typing import Any
 
 from .core import Skill4EconError, failure_manifest, make_run_context, read_spec, write_audit, write_manifest
 from .contracts.agent_status import is_claimable_agent_status
+from .adapters.r import R_METHODS
 from .python_wrappers import PYTHON_METHODS
 from .stata_wrappers import STATA_METHODS
 from .validation import write_validation_report
@@ -44,6 +45,8 @@ def _handler(engine: str, method: str):
         return PYTHON_METHODS.get(method)
     if engine == "stata":
         return STATA_METHODS.get(method)
+    if engine == "r":
+        return R_METHODS.get(method)
     return None
 
 

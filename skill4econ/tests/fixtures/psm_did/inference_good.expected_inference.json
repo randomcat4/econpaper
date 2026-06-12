@@ -1,0 +1,16 @@
+{
+  "ATT_nearest_neighbor": {
+    "coef_min": 0.97,
+    "coef_max": 1.03,
+    "std_error_min": 0.01,
+    "std_error_max": 0.25
+  },
+  "ATE_ipw": {
+    "std_error_min": 0.01,
+    "std_error_max": 0.8
+  },
+  "ATT_ipw": {
+    "std_error_min": 0.01,
+    "std_error_max": 1.0
+  }
+}

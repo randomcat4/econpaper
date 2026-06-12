@@ -132,14 +132,17 @@ def test_did_golden_author_configured_placebo_and_heterogeneity_artifacts(tmp_pa
     ctx = make_run_context("did_paper_run", "workflow", spec, "run", str(tmp_path / "runs"))
     manifest = did_paper_run(ctx)
     assert manifest["status"] == "success"
-    for artifact_name in ["placebo_tests.csv", "heterogeneity.csv"]:
+    for artifact_name in ["placebo_tests.csv", "heterogeneity.csv", "heterogeneity_multiple_testing.csv"]:
         assert ctx.artifact(artifact_name).exists(), artifact_name
 
     placebo_rows = pd.read_csv(ctx.artifact("placebo_tests.csv"))
     heterogeneity_rows = pd.read_csv(ctx.artifact("heterogeneity.csv"))
+    multiple_testing_rows = pd.read_csv(ctx.artifact("heterogeneity_multiple_testing.csv"))
     robustness_rows = pd.read_csv(ctx.artifact("robustness_grid.csv"))
     assert set(placebo_rows["status"]) == {"computed"}
     assert {"region", "size_group"} <= set(heterogeneity_rows.loc[heterogeneity_rows["status"] == "computed", "dimension"])
+    assert {"raw_p_value", "bh_q_value", "method"} <= set(multiple_testing_rows.columns)
+    assert set(multiple_testing_rows["method"]) == {"benjamini_hochberg"}
     assert len(set(robustness_rows["family"])) >= 4
 
     artifact_manifest = json.loads(ctx.artifact("artifact_manifest.json").read_text(encoding="utf-8"))

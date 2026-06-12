@@ -84,6 +84,23 @@ def test_complete_iv_diagnostics_can_be_safe(tmp_path: Path) -> None:
     assert result.design_profile["claim_levels"]["causal_language"]["tier"] == "safe"
 
 
+def test_rdd_density_and_covariate_artifacts_clear_design_gate(tmp_path: Path) -> None:
+    artifacts = [
+        {"artifact_id": "rdplot", "artifact_type": "figure_manifest", "path": "figures/manifest.json", "hash": "sha256:a"},
+        {"artifact_id": "bandwidth", "artifact_type": "rdd_bandwidth", "path": "rdd_bandwidth.csv", "hash": "sha256:b"},
+        {"artifact_id": "density", "artifact_type": "rdd_density_test", "path": "rdd_density_test.json", "hash": "sha256:c"},
+        {"artifact_id": "covariates", "artifact_type": "covariate_continuity", "path": "covariate_continuity.csv", "hash": "sha256:d"},
+    ]
+    result = build_design_profile(
+        intake_profile_path=_intake(tmp_path / "intake.json", "geographic RDD around a boundary"),
+        evidence_ledger_path=_evidence(tmp_path / "ledger.json", artifacts),
+    )
+
+    profile = result.design_profile
+    assert profile["diagnostics_missing"] == []
+    assert profile["claim_levels"]["causal_language"]["tier"] == "safe"
+
+
 def test_mock_run_validation_is_hard_block(tmp_path: Path) -> None:
     run_validation = _write_json(tmp_path / "run_validation.json", {"mock_watermark_required": True})
     result = build_design_profile(

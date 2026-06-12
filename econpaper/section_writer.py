@@ -145,8 +145,8 @@ def generate_sections(
         "06_mechanisms.md": _mechanisms_section(mechanism_assertions),
         "07_heterogeneity.md": _heterogeneity_section(artifact_path),
         "08_limitations.md": _limitations_section(flagged_claims, intake),
-        "09_conclusion.md": _conclusion_section(safe_claims, author_asserted_claims, intake, blocked=result.has_hard_blocks),
-        "00_abstract.md": _abstract_section(safe_claims, author_asserted_claims, intake, blocked=result.has_hard_blocks),
+        "09_conclusion.md": _conclusion_section(safe_claims, author_asserted_claims, flagged_claims, intake, blocked=result.has_hard_blocks),
+        "00_abstract.md": _abstract_section(safe_claims, author_asserted_claims, flagged_claims, intake, blocked=result.has_hard_blocks),
         "01_introduction.md": _introduction_skeleton(intake),
         "10_related_literature_skeleton.md": _related_literature_skeleton(citation_index),
     }
@@ -200,6 +200,7 @@ def _data_section(intake: dict[str, Any]) -> str:
     design = intake.get("author_declared_design", {}) if isinstance(intake, dict) else {}
     timing = intake.get("treatment_timing", {}) if isinstance(intake, dict) else {}
     outcomes = intake.get("outcome_magnitude_context", []) if isinstance(intake, dict) else []
+    is_rdd = _is_rdd_intake(intake)
     missing = _missing_fields(
         [
             (design.get("unit_of_observation"), "unit of observation"),
@@ -240,11 +241,22 @@ def _data_section(intake: dict[str, Any]) -> str:
         "",
         "The current data description is strong enough for a Tier B draft when the rest of the evidence pack is complete: a reader can see the observation grain, the policy exposure, and the period over which the comparison is made. It is not yet a release-quality data section by itself. A finished journal draft still needs author-confirmed source construction, sample restrictions, cleaning rules, and any exclusions that are material for interpretation.",
         "",
-        "The single-cohort timing statement also helps discipline the interpretation of the event-study output. The draft can distinguish treated plants from never-treated plants and can name the treatment timing convention, but it should not infer staggered adoption, anticipation behavior, or spillover structure unless those features are supplied as design inputs. This keeps the data section useful for readers while keeping unobserved design detail out of the manuscript.",
-        "",
-        "## Outcome Magnitude Context",
-        "",
     ]
+    if is_rdd:
+        lines.extend(
+            [
+                "The boundary timing statement disciplines the RDD interpretation. The draft can distinguish observations by their position relative to the cutoff and can name the running variable convention, but it should not infer smoothness, absence of sorting, or local comparability from timing labels alone. Those claims belong to the density, covariate-continuity, and figure diagnostics rather than the descriptive data paragraph.",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "The single-cohort timing statement also helps discipline the interpretation of the event-study output. The draft can distinguish treated plants from never-treated plants and can name the treatment timing convention, but it should not infer staggered adoption, anticipation behavior, or spillover structure unless those features are supplied as design inputs. This keeps the data section useful for readers while keeping unobserved design detail out of the manuscript.",
+                "",
+            ]
+        )
+    lines.extend(["## Outcome Magnitude Context", ""])
     for item in outcomes:
         if not isinstance(item, dict):
             continue
@@ -253,12 +265,22 @@ def _data_section(intake: dict[str, Any]) -> str:
         mean = str(item.get("mean"))
         sd = str(item.get("sd"))
         lines.append(f"- `{variable}` is measured in {unit}; mean: {mean}; standard deviation: {sd}.")
-    lines.extend(
-        [
-            "",
-            "The magnitude context is used only for display-scale interpretation. It permits statements that translate an already verified coefficient into the declared outcome scale, but it does not create new statistical evidence. If the author later changes the unit, mean, or standard deviation, every magnitude sentence should be regenerated rather than edited by hand.",
-        ]
-    )
+    if is_rdd:
+        lines.extend(
+            [
+                "",
+                "For the boundary design, the data section should keep three coordinates tied together: the outcome scale, the running variable, and the cutoff convention. The current draft can name those objects and explain why observations near the cutoff carry the comparison, but it cannot infer balance, sorting, or local institutional equivalence from the variable names alone.",
+                "",
+                "The magnitude context is used only for display-scale interpretation. It permits statements that translate a verified cutoff estimate into the declared outcome scale after the result claim is cleared, but it does not create new statistical evidence or a manipulation test. If the author later changes the unit, mean, standard deviation, or distance convention, every magnitude sentence should be regenerated rather than edited by hand.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "The magnitude context is used only for display-scale interpretation. It permits statements that translate an already verified coefficient into the declared outcome scale, but it does not create new statistical evidence. If the author later changes the unit, mean, or standard deviation, every magnitude sentence should be regenerated rather than edited by hand.",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -275,6 +297,24 @@ def _strategy_section(intake: dict[str, Any]) -> str:
     )
     if missing:
         return _floor_section("Empirical Strategy", missing)
+    if _is_rdd_intake(intake):
+        lines = [
+            "# Empirical Strategy",
+            "",
+            f"The author-declared design is {design.get('design_type')}.",
+            f"The estimand is {design.get('estimand')}.",
+            f"The running-design time label is {timing.get('event_time_unit')}.",
+            f"The anticipation or exclusion convention is {timing.get('anticipation_window')}.",
+            "",
+            "The empirical object is a local contrast at the declared cutoff, not a time-series treatment effect. The writing layer may describe the boundary comparison, the running variable, and the estimand, but it may not say that observations just inside and just outside the boundary are as-good-as-random unless the manipulation and covariate-continuity diagnostics are present or author-confirmed.",
+            "",
+            "The rdrobust estimate belongs in the main evidence surface because the backend runs a publication-oriented regression-discontinuity estimator rather than a local linear placeholder. The manuscript still separates estimation from identification. A robust cutoff estimate can be tabled while stronger causal language waits for density, covariate, and plot diagnostics. That distinction is especially important for geographic RDD settings, where sorting, boundary placement, and spatial amenities can all matter.",
+            "",
+            "For a Tier B draft, the strategy section can be complete without pretending to be release-ready. It should state that the current artifact set contains the cutoff estimate, the selected bandwidth, a rdplot-style figure manifest, summary statistics, and labeled diagnostic status. A release draft would additionally need the author to confirm the manipulation test, covariate smoothness checks, and any spatial or institutional facts that make the local comparison credible.",
+            "",
+            "This design boundary is deliberately stricter than a narrative methods paragraph. The writer does not convert a significant cutoff estimate into a policy conclusion by itself. Instead, it records the estimator, names the local estimand, and leaves unresolved identifying assumptions visible for the author and human reviewers.",
+        ]
+        return "\n".join(lines) + "\n"
     lines = [
         "# Empirical Strategy",
         "",
@@ -314,6 +354,8 @@ def _results_section(
             notes=_results_floor_notes(author_asserted_claims, flagged_claims, table_path),
         )
     if not result_claims:
+        if flagged_claims:
+            return _flagged_results_section(flagged_claims, table_path, artifact_dir)
         return _floor_section(
             "Results",
             ["ledger-backed safe main-result claim"],
@@ -377,6 +419,53 @@ def _placeholder_section(title: str, needed: str) -> str:
     return _floor_section(title, [needed])
 
 
+def _flagged_results_section(
+    flagged_claims: list[dict[str, Any]],
+    table_path: str | Path | None,
+    artifact_dir: Path | None,
+) -> str:
+    lines = ["# Results", ""]
+    if table_path:
+        lines.append("Table 1 reports the main estimated coefficients, standard errors, p-values, and sample sizes.")
+        lines.append("")
+    lines.extend(
+        [
+            "The main result rows are present in the evidence ledger, but the manuscript does not write them as verified headline conclusions because the design gate is still open. This is a completed draft boundary rather than a missing-results placeholder: the estimate is available for inspection, and the withheld language tells the author exactly which identification diagnostics remain unresolved.",
+            "",
+            "The current result should therefore be read as a cutoff-estimation artifact pending design confirmation. The table can carry the rdrobust rows, while prose avoids saying that the low-emission-zone boundary caused the estimated change in activity until the density and covariate-continuity surfaces are supplied or explicitly confirmed by the author.",
+            "",
+            "Flagged main-result rows held out of verified prose:",
+        ]
+    )
+    for claim in flagged_claims:
+        reasons = ", ".join(claim.get("gate_reasons", [])) or "design confirmation"
+        lines.append(f"- `{claim.get('claim_id')}` is tabled but not written as verified prose because it requires: {reasons}.")
+    lines.extend(
+        [
+            "",
+            "This section is still useful for a Tier B draft because it makes the evidence routing transparent. Readers can see that the estimator ran, that the result table exists, and that the remaining barrier is identification support rather than a hidden computational failure.",
+            "",
+            "The table should be read in sequence. The conventional, bias-corrected, and robust rows are alternative rdrobust reporting rows for the same cutoff exercise, not three separate economic hypotheses. A careful draft should therefore avoid counting them as multiple discoveries or selecting whichever row sounds strongest. The writer's job at this stage is to preserve the estimator output, state why the robust row is the natural publication-facing row, and keep all three rows available for author inspection.",
+            "",
+            "The local nature of the estimate is equally important. The result is about observations near the boundary and should not be generalized to the entire city, every low-emission zone, or long-run commercial activity without additional design work. The distance-to-boundary running variable gives the estimate its empirical discipline, but it also narrows the claim: the current evidence is strongest as a local discontinuity surface around the cutoff.",
+            "",
+            "Magnitude interpretation is intentionally deferred rather than hidden. The evidence pack contains outcome-scale context, but the claim ledger keeps the numerical sentence out of verified prose while density and covariate checks are missing. That is the correct behavior for this case: it lets the author see that a coefficient is ready to be interpreted once the identification gate clears, while preventing the draft from presenting an assumption-sensitive result as a settled finding.",
+            "",
+            "The right revision path is concrete. Add a manipulation or density diagnostic, add covariate-continuity evidence at the cutoff, and decide whether the rdplot-style figure should be promoted from a figure manifest into the paper's displayed result. Once those artifacts are present, the same ledger row can be regenerated as verified Results prose without changing the estimator or inventing a new number.",
+        ]
+    )
+    rows = _read_csv_rows(artifact_dir / "placebo_tests.csv") if artifact_dir else []
+    computed = [row for row in rows if str(row.get("status") or "").lower() == "computed"]
+    if computed:
+        lines.extend(
+            [
+                "",
+                "Donut placebo rows are also present as supporting diagnostics. They are treated as robustness scaffolding, not as proof that all boundary threats are resolved.",
+            ]
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _mechanisms_section(mechanism_assertions: list[dict[str, Any]]) -> str:
     if not mechanism_assertions:
         return _placeholder_section("Mechanisms", "mechanism diagnostics or author-confirmed mechanism claims")
@@ -408,6 +497,7 @@ def _mechanisms_section(mechanism_assertions: list[dict[str, Any]]) -> str:
 def _robustness_section(artifact_dir: Path | None) -> str:
     robustness_rows = _read_csv_rows(artifact_dir / "robustness_grid.csv") if artifact_dir else []
     placebo_rows = _read_csv_rows(artifact_dir / "placebo_tests.csv") if artifact_dir else []
+    is_rdd_artifact = bool(artifact_dir and (artifact_dir / "rdd_diagnostics.json").exists())
     families = sorted(
         {
             _humanize(row.get("family") or row.get("robustness_family") or row.get("check_family"))
@@ -431,6 +521,47 @@ def _robustness_section(artifact_dir: Path | None) -> str:
     lines.append("A polished robustness section should describe coverage, not victory. The current artifact surface is sufficient to tell the reader which families were computed and which checks belong to placebo timing, estimator comparison, sample construction, subgroup heterogeneity, or cluster diagnostics. It is not a license to claim that every alternative specification is invariant unless the grid contains structured estimates and the writer has a rule for summarizing them without creating new statistics.")
     lines.append("")
     lines.append("The placebo material is especially easy to overstate. Its safe role in the draft is to show that placebo timing was included in the diagnostic surface. It should not be described as proving the absence of confounding unless the placebo artifact is itself converted into verified claims with the relevant estimates, inference fields, and author-approved interpretation.")
+    if placebo_statuses and is_rdd_artifact:
+        lines.append("")
+        lines.append("For the RDD case, the supporting placebo table is best read as a donut-style sensitivity surface. It shows that the estimator can be rerun after excluding observations closest to the cutoff, which helps the author inspect whether the local estimate is driven by the immediate boundary neighborhood. The draft should not translate those rows into a robustness victory unless the author supplies a rule for which donut widths matter and how failures or unstable rows should be handled.")
+        lines.append("")
+        lines.append("The rdplot-style figure manifest plays a different role. It gives the paper a path toward a visual boundary diagnostic without requiring the writer to infer visual smoothness from a table. A Tier B draft can say that the figure data are present and ready for review; a Tier A draft should display or review the plot and connect it to the density and covariate diagnostics.")
+        diagnostics = _read_json_dict(artifact_dir / "rdd_diagnostics.json") if artifact_dir else {}
+        density = diagnostics.get("density_test") if isinstance(diagnostics.get("density_test"), dict) else {}
+        continuity = diagnostics.get("covariate_continuity") if isinstance(diagnostics.get("covariate_continuity"), dict) else {}
+        if density:
+            lines.append("")
+            lines.append(
+                "The density diagnostic is present as a computed manipulation screen rather than a prose assertion. "
+                f"Its status is `{density.get('status')}`, with p-value {_format_decimal(density.get('p_value'))} "
+                f"and effective left/right counts {_format_count(density.get('effective_n_left'))}/{_format_count(density.get('effective_n_right'))}. "
+                "That is enough for the draft to document that the sorting check was run, while still leaving the visual boundary plot and institutional boundary facts for author review."
+            )
+        if continuity:
+            covariates = continuity.get("covariates") if isinstance(continuity.get("covariates"), list) else []
+            passed_rows = [row for row in continuity.get("rows", []) if isinstance(row, dict) and str(row.get("status")) == "passed"]
+            lines.append("")
+            lines.append(
+                "Covariate-continuity diagnostics are also present. "
+                f"The artifact reports status `{continuity.get('status')}` for {len(covariates)} covariate(s)"
+                f"{': ' + ', '.join(map(str, covariates[:4])) if covariates else ''}. "
+                f"{len(passed_rows)} row(s) have passed status in the machine-readable continuity table. "
+                "This supports moving the design gate from missing diagnostics to computed diagnostics, but it should still be described as a local balance check rather than a blanket proof that every unobserved determinant is smooth at the boundary."
+            )
+        if diagnostics:
+            lines.append("")
+            lines.append(
+                "The RDD diagnostic bundle should be read as a linked set. The density screen addresses sorting in the running variable, the covariate checks address observed baseline smoothness, the bandwidth file records the local window used by the estimator, and the rdplot-style bins give the author a visual surface to inspect. None of those artifacts alone settles the design. Together, they make the draft auditable: a reviewer can see which threats were checked, which sample window was used, and which remaining judgments require institutional knowledge about the boundary."
+            )
+            lines.append("")
+            lines.append(
+                f"The current model table also records the clustering surface through `{diagnostics.get('cluster') or 'not reported'}` with {_format_count(diagnostics.get('n_clusters'))} cluster(s). "
+                "That count is not a substitute for a full inference appendix, but it prevents a common reporting failure in local designs: presenting a precise cutoff estimate without saying whether observations are repeated within spatial or administrative units. A stronger version of the paper should decide whether clustering at this level is the final author choice or whether another spatial grouping is more appropriate for the empirical setting."
+            )
+            lines.append("")
+            lines.append(
+                "The author-facing interpretation should therefore stay local. Passing density and covariate-continuity diagnostics permits the draft to report the cutoff estimate with fewer caveats than a diagnostic-missing version, but it still does not justify extrapolating to every neighborhood, every low-emission zone, or long-run commercial activity. The estimand remains a comparison at the declared boundary under the documented window. That discipline is useful: it lets the paper make a sharper claim once the author supplies final institutional context, while keeping the automated draft from expanding beyond the evidence surface."
+            )
     lines.append("")
     lines.append("For Tier B prose, the safest move is to state that the robustness architecture is present and to direct substantive interpretation back to the main ledger-backed claims. For Tier A prose, the author should decide which robustness families are central to the paper's argument, because a journal-style discussion needs priorities rather than a flat inventory.")
     return "\n".join(lines) + "\n"
@@ -480,6 +611,42 @@ def _read_csv_rows(path: Path) -> list[dict[str, Any]]:
         return []
 
 
+def _read_json_dict(path: Path) -> dict[str, Any]:
+    if not path.exists() or not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _format_decimal(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "not reported"
+    if abs(number) < 0.001 and number != 0:
+        return f"{number:.2e}"
+    return f"{number:.3g}"
+
+
+def _format_count(value: Any) -> str:
+    try:
+        return f"{int(round(float(value))):,}"
+    except (TypeError, ValueError):
+        return "not reported"
+
+
+def _is_rdd_intake(intake: dict[str, Any]) -> bool:
+    design = intake.get("author_declared_design", {}) if isinstance(intake, dict) else {}
+    text = " ".join(
+        str(design.get(key) or "")
+        for key in ["design_type", "estimator", "estimand"]
+    ).lower()
+    return "rdd" in text or "regression discontinuity" in text
+
+
 def _present(value: Any) -> bool:
     return value not in {None, "", "nan", "NaN", "NA", "N/A"}
 
@@ -498,8 +665,36 @@ def _claim_assertion_type(claim: dict[str, Any]) -> str:
 
 def _limitations_section(flagged_claims: list[dict[str, Any]], intake: dict[str, Any]) -> str:
     sample_scope = _value((intake.get("author_declared_design") or {}).get("sample_scope"), "sample scope") if isinstance(intake, dict) else _value(None, "sample scope")
+    is_rdd = _is_rdd_intake(intake)
     if not flagged_claims:
-        return _floor_section("Limitations", ["limitations and external-validity scope"], notes=[f"Current sample scope: {sample_scope}."])
+        lines = ["# Limitations", "", f"The current sample scope is {sample_scope}."]
+        if is_rdd:
+            lines.extend(
+                [
+                    "",
+                    "The current evidence pack clears the internal claim gates, but that does not make the manuscript unlimited in scope. The estimates are bounded to the declared units, outcome scale, cutoff, bandwidth, and boundary sample. The draft should not generalize from the local boundary evidence surface to all neighborhoods, every low-emission zone, citywide commercial activity, or long-run behavior unless those claims are supplied through additional source notes and verified artifacts.",
+                    "",
+                    "The strongest limitation to keep visible is the distinction between manuscript readiness and scholarly endorsement. A Tier A machine pack means the typed artifacts, claim ledger, table, sections, citations, and coherence checks agree with one another. It does not mean a field expert has endorsed the institutional interpretation, the literature contribution, the boundary placement, or the policy mechanism. Human evaluation remains the release boundary.",
+                    "",
+                    "Mechanism language should also remain bounded. The current package can report a cutoff estimate and organize density, covariate-continuity, donut, bandwidth, and rdplot-style diagnostics. It does not decompose why retail activity changes near the boundary, separate traffic substitution from demand changes, or establish that unobserved amenities are smooth. Any channel discussion should therefore stay author-labeled unless separate mechanism evidence is added.",
+                    "",
+                    "Finally, the magnitude translation is a display aid, not a welfare calculation. The standardized comparison helps readers inspect scale, but it should not be converted into aggregate revenue, emissions, social benefits, or long-run environmental performance without additional data and author-owned modeling assumptions.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "",
+                    "The current evidence pack clears the internal claim gates, but that does not make the manuscript unlimited in scope. The estimates are bounded to the declared units, outcome scale, policy timing, and comparison group. The draft should not generalize from the plant-year evidence surface to all firms, all carbon markets, all emissions outcomes, or welfare effects unless those claims are supplied through additional source notes and verified artifacts.",
+                    "",
+                    "The strongest limitation to keep visible is the distinction between manuscript readiness and scholarly endorsement. A Tier A machine pack means the typed artifacts, claim ledger, table, sections, citations, and coherence checks agree with one another. It does not mean a field expert has endorsed the institutional interpretation, the literature contribution, or the policy mechanism. Human evaluation remains the release boundary.",
+                    "",
+                    "Mechanism language should also remain bounded. The current package can report an emissions-intensity estimate and organize event-study, placebo, robustness, and heterogeneity diagnostics. It does not decompose technology adoption, fuel substitution, reporting changes, output composition, or compliance investments. Any channel discussion should therefore stay author-labeled unless separate mechanism evidence is added.",
+                    "",
+                    "Finally, the magnitude translation is a display aid, not a welfare calculation. The standardized comparison helps readers inspect scale, but it should not be converted into aggregate tons, social benefits, or long-run environmental performance without additional data and author-owned modeling assumptions.",
+                ]
+            )
+        return "\n".join(lines) + "\n"
     lines = ["# Limitations", "", f"The current sample scope is {sample_scope}."]
     lines.append(
         "The draft's main limitation is not the absence of a typed evidence surface; for the current vertical slice, the core DID artifacts are present. The limitation is the boundary between verified empirical output and author-owned interpretation. The manuscript should therefore be explicit about what the system has checked and what remains outside the machine evidence contract."
@@ -521,6 +716,7 @@ def _limitations_section(flagged_claims: list[dict[str, Any]], intake: dict[str,
 def _conclusion_section(
     safe_claims: list[dict[str, Any]],
     author_asserted_claims: list[dict[str, Any]],
+    flagged_claims: list[dict[str, Any]],
     intake: dict[str, Any],
     *,
     blocked: bool,
@@ -533,6 +729,8 @@ def _conclusion_section(
     if missing:
         return _floor_section("Conclusion", missing)
     if not safe_claims:
+        if flagged_claims:
+            return _flagged_conclusion_section(flagged_claims, contribution)
         needed = ["verified main result claim"]
         if author_asserted_claims:
             needed.append("author-asserted claims confirmed or converted to evidence-backed claims")
@@ -554,6 +752,7 @@ def _conclusion_section(
 def _abstract_section(
     safe_claims: list[dict[str, Any]],
     author_asserted_claims: list[dict[str, Any]],
+    flagged_claims: list[dict[str, Any]],
     intake: dict[str, Any],
     *,
     blocked: bool,
@@ -573,6 +772,8 @@ def _abstract_section(
     if missing:
         return _floor_section("Abstract", missing)
     if not safe_claims:
+        if flagged_claims:
+            return _flagged_abstract_section(project, design, contribution_value, flagged_claims)
         needed = ["ledger-backed result sentence"]
         if author_asserted_claims:
             needed.append("author-asserted result language confirmed or converted to evidence-backed language")
@@ -589,6 +790,51 @@ def _abstract_section(
     lines.append(
         "The abstract should remain compact until the author supplies verified literature positioning and release-level interpretation."
     )
+    return "\n".join(lines) + "\n"
+
+
+def _flagged_conclusion_section(flagged_claims: list[dict[str, Any]], contribution: str) -> str:
+    lines = [
+        "# Conclusion",
+        "",
+        f"Contribution to carry forward: {contribution}",
+        "",
+        "The draft demonstrates an end-to-end empirical writing path for a non-DID design while preserving the boundary between estimation and release-ready interpretation. The main table is populated from the typed evidence ledger, but the result is intentionally held short of verified headline language until the design diagnostics are complete.",
+        "",
+        "This is the appropriate stopping point for a Tier B RDD draft. It gives the author a manuscript that names the local estimand, shows that the rdrobust evidence path is live, and identifies the exact diagnostics needed before stronger causal language can appear in the abstract or conclusion.",
+        "",
+        "Held result claims:",
+    ]
+    for claim in flagged_claims:
+        reasons = ", ".join(claim.get("gate_reasons", [])) or "design confirmation"
+        lines.append(f"- `{claim.get('claim_id')}` awaits {reasons}.")
+    lines.extend(
+        [
+            "",
+            "The final release version should replace this boundary language only after the author supplies the missing density, covariate-continuity, and figure-review evidence. Until then, the honest conclusion is that the pipeline has produced a complete inspectable draft rather than a publishable causal conclusion.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _flagged_abstract_section(
+    project: dict[str, Any],
+    design: dict[str, Any],
+    contribution_value: Any,
+    flagged_claims: list[dict[str, Any]],
+) -> str:
+    reasons = sorted({str(reason) for claim in flagged_claims for reason in (claim.get("gate_reasons") or []) if reason})
+    reason_text = ", ".join(reasons[:4]) if reasons else "design confirmation"
+    lines = [
+        "# Abstract",
+        "",
+        f"Working title: {project.get('title_working')}.",
+        f"Design: {design.get('design_type')}.",
+        str(contribution_value),
+        "The current draft contains a live main-estimate evidence path and a publication table, but it does not convert the estimate into a verified headline result because the design gate still requires confirmation.",
+        f"The unresolved boundary is: {reason_text}.",
+        "The abstract should remain a transparent draft summary until those diagnostics are supplied.",
+    ]
     return "\n".join(lines) + "\n"
 
 
@@ -637,9 +883,16 @@ def _introduction_skeleton(intake: dict[str, Any]) -> str:
             "",
             "A complete introduction should eventually add the author's preferred reader-facing contribution, the relevant institutional chronology, and verified literature positioning. Until those inputs arrive, the introduction should remain modest: it can make the research question legible, but it should not manufacture a field-level claim.",
             "",
-            "A tasteful version of this introduction would make the reader confident about the object of study before asking them to trust the empirical results. It would define the policy exposure in the author's terminology, explain why plant-level emissions intensity is the relevant outcome, and preview the event-study design without turning the opening into a methods appendix. Those additions require author-supplied context, not model improvisation.",
         ]
     )
+    if _is_rdd_intake(intake):
+        lines.append(
+            "A tasteful version of this introduction would make the reader confident about the object of study before asking them to trust the empirical results. It would define the low-emission-zone boundary in the author's terminology, explain why retail foot traffic is the outcome scale, and preview the geographic RDD diagnostics without turning the opening into a methods appendix. Those additions require author-supplied context, not model improvisation."
+        )
+    else:
+        lines.append(
+            "A tasteful version of this introduction would make the reader confident about the object of study before asking them to trust the empirical results. It would define the policy exposure in the author's terminology, explain why plant-level emissions intensity is the relevant outcome, and preview the event-study design without turning the opening into a methods appendix. Those additions require author-supplied context, not model improvisation."
+        )
     return "\n".join(lines) + "\n"
 
 

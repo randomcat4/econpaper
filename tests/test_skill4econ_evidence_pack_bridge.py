@@ -99,6 +99,50 @@ def test_skill4econ_manifest_feeds_econpaper_evidence_pack_without_contract_down
     assert {"words_total_below_2500", "core_placeholders_present"} <= set(tier.metrics["tier_b_blockers"])
 
 
+def test_skill4econ_rdd_manifest_exposes_rdd_artifact_types(tmp_path: Path) -> None:
+    run_dir = tmp_path / "rdd_run"
+    run_dir.mkdir()
+    _write_csv(
+        run_dir / "model_table.csv",
+        [{"term": "Robust", "coef": "-0.05", "std_error": "0.01", "p_value": "0.02", "ci_low": "-0.07", "ci_high": "-0.03", "n_obs": "500", "n_clusters": "50"}],
+    )
+    _write_csv(run_dir / "summary_stats.csv", [{"variable": "y", "mean": "5.4", "sd": "0.2", "unit": "log visits"}])
+    _write_csv(run_dir / "rdd_bandwidth.csv", [{"side": "left", "bandwidth": "1.5"}])
+    _write_json(run_dir / "rdd_density_test.json", {"status": "passed", "p_value": 0.6})
+    _write_csv(run_dir / "covariate_continuity.csv", [{"covariate": "x0", "status": "passed", "p_value": "0.8"}])
+    _write_json(
+        run_dir / "rdd_diagnostics.json",
+        {
+            "density_test": {"status": "passed", "path": "rdd_density_test.json"},
+            "covariate_continuity": {"status": "passed", "path": "covariate_continuity.csv"},
+        },
+    )
+    (run_dir / "provenance.yaml").write_text("data_provenance: author_supplied\n", encoding="utf-8")
+    write_artifact_manifest(
+        run_dir / "artifact_manifest.json",
+        workflow="rdrobust_rdd",
+        run_id="fixture",
+        run_dir=run_dir,
+        status="success",
+        required_artifacts=["model_table.csv", "summary_stats.csv", "rdd_bandwidth.csv", "rdd_diagnostics.json"],
+    )
+
+    pack = tmp_path / "econpaper_pack"
+    result = write_evidence_ledger(run_dir=run_dir, out_dir=pack, summary_stats_path=run_dir / "summary_stats.csv")
+
+    evidence_pack = json.loads((pack / "evidence_pack.json").read_text(encoding="utf-8"))
+    artifact_types = {item["artifact_type"] for item in evidence_pack["artifacts"]}
+    assert result.has_hard_blocks is False
+    assert {
+        "model_table",
+        "summary_stats",
+        "rdd_bandwidth",
+        "rdd_diagnostics",
+        "rdd_density_test",
+        "covariate_continuity",
+    } <= artifact_types
+
+
 def test_real_skill4econ_did_run_reaches_econpaper_tier_b_evidence_boundary(tmp_path: Path) -> None:
     spec = read_spec(ROOT / "skill4econ" / "examples" / "mini_panel" / "did_paper_run_spec.yml")
     spec["output_dir"] = str(tmp_path / "runs")

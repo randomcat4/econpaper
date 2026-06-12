@@ -17,7 +17,7 @@ if str(PSM_FIXTURE_DIR) not in sys.path:
 from generate_psm_did_fixtures import PSM_DID_FIXTURE_NAMES, materialize_psm_did_fixtures
 from skill4econ.core import make_run_context
 from skill4econ.diagnostics.overlap_balance import run_overlap_balance_diagnostics
-from skill4econ.python_wrappers import psm_overlap_balance
+from skill4econ.python_wrappers import psm_ipw_match, psm_overlap_balance
 from skill4econ.workflows import _psm_did_postprocess
 
 
@@ -188,6 +188,31 @@ def test_psm_overlap_balance_wrapper_registers_manifest_artifacts(tmp_path: Path
         "figures/psm_grid_forest.png",
     ]:
         assert rel in paths
+
+
+def test_psm_ipw_match_reports_real_inference_from_fixture(tmp_path: Path) -> None:
+    fixture = PSM_FIXTURE_DIR / "inference_good.csv"
+    spec = json.loads((PSM_FIXTURE_DIR / "inference_good.spec.json").read_text(encoding="utf-8"))
+    expected = json.loads((PSM_FIXTURE_DIR / "inference_good.expected_inference.json").read_text(encoding="utf-8"))
+    spec["data"] = str(fixture)
+    ctx = make_run_context("psm_ipw_match", "python", spec, "run", str(tmp_path / "runs"))
+
+    manifest = psm_ipw_match(ctx)
+    model = pd.read_csv(ctx.artifact("model_table.csv")).set_index("term")
+    diagnostics = json.loads(ctx.artifact("psm_diagnostics.json").read_text(encoding="utf-8"))
+
+    assert manifest["status"] == "ok"
+    assert diagnostics["matching_se_method"] == "abadie_imbens_2006_nn_att_pscore"
+    assert diagnostics["ipw_bootstrap"]["successful_reps"] >= 99
+    assert "PSM_NAIVE_SE_NOT_ABADIE_IMBENS" not in set(manifest["risk_codes"])
+    for term, bounds in expected.items():
+        row = model.loc[term]
+        assert row["std_error"] == row["std_error"]
+        assert bounds["std_error_min"] <= row["std_error"] <= bounds["std_error_max"]
+        if "coef_min" in bounds:
+            assert bounds["coef_min"] <= row["coef"] <= bounds["coef_max"]
+        assert row["ci_low"] < row["coef"] < row["ci_high"]
+        assert str(row["se_method"])
 
 
 def test_trimmed_weights_reduction_is_recorded_in_run_log(tmp_path: Path) -> None:

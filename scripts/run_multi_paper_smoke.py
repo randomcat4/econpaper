@@ -65,13 +65,13 @@ CASES = [
         topic="Carbon pricing exposure and manufacturing emissions",
         venue="aea",
         field="environmental economics",
-        method="did_twfe_event",
-        design_type="DID with event-study diagnostics and never-treated comparison group",
-        estimand="average treatment effect of carbon-market exposure on plant-level CO2 intensity",
+        method="cs_did_attgt",
+        design_type="staggered DID with Callaway-Sant'Anna ATT(g,t), event-study diagnostics, and never-treated controls",
+        estimand="cohort-time ATT(g,t) of carbon-market exposure on plant-level CO2 intensity",
         unit="plant-year",
         sample="manufacturing plants in regulated and neighboring provinces, 2010-2022",
         treatment="pilot carbon market coverage",
-        timing_type="single adoption cohort with never-treated controls",
+        timing_type="staggered adoption cohorts with never-treated controls",
         anticipation_window="two years before market launch",
         event_time_unit="year",
         contribution="The paper quantifies how carbon-market exposure changes manufacturing emissions intensity while keeping treatment timing explicit.",
@@ -191,11 +191,13 @@ def main() -> int:
     root = args.out_root / run_id
     root.mkdir(parents=True, exist_ok=True)
 
+    backend_certification = _run_backend_certification(root)
     codex_path = None if args.skip_codex_review else _codex_subscription_path()
     summary: dict[str, Any] = {
         "version": "v3.0",
         "run_id": run_id,
         "out_dir": str(root),
+        "backend_certification": backend_certification,
         "codex_review": {
             "enabled": not args.skip_codex_review,
             "cli_path": codex_path,
@@ -214,6 +216,7 @@ def main() -> int:
                 root=root,
                 codex_path=codex_path,
                 codex_timeout=args.codex_timeout,
+                backend_certification=backend_certification,
             )
         )
 
@@ -238,8 +241,20 @@ def main() -> int:
         "did_tier_a_artifact_complete_cases": [
             item["case_id"]
             for item in summary["cases"]
-            if not item["static_checks"].get("did_tier_a_missing_artifacts")
+            if "did" in str(item.get("design_type") or "").lower()
+            and not item["static_checks"].get("did_tier_a_missing_artifacts")
             and not item["static_checks"].get("did_tier_a_incomplete_artifacts")
+        ],
+        "rdd_tier_b_artifact_complete_cases": [
+            item["case_id"]
+            for item in summary["cases"]
+            if ("rdd" in str(item.get("design_type") or "").lower() or "regression discontinuity" in str(item.get("design_type") or "").lower())
+            and item["static_checks"].get("rdd_tier_b_missing_or_incomplete_artifacts") == []
+        ],
+        "tier_b_or_better_cases": [
+            item["case_id"]
+            for item in summary["cases"]
+            if item["static_checks"].get("draft_tier") in {"A", "B"}
         ],
         "author_report_unrendered_claim_placeholder_cases": [
             item["case_id"]
@@ -249,7 +264,24 @@ def main() -> int:
         "diagnostic_claim_bleed_cases": [
             item["case_id"] for item in summary["cases"] if item["static_checks"]["diagnostic_terms_in_results"]
         ],
+        "pdf_produced_cases": [
+            item["case_id"] for item in summary["cases"] if item["static_checks"].get("pdf_exists")
+        ],
+        "main_claims_paper_ready_cases": [
+            item["case_id"]
+            for item in summary["cases"]
+            if item["static_checks"].get("claim_status") == "passed"
+            and item["static_checks"].get("safe_claim_count", 0) > 0
+            and item["static_checks"].get("evidence_pack_status") == "passed"
+            and item["static_checks"].get("run_validation_status") == "passed"
+        ],
+        "only_human_eval_blocked_cases": [
+            item["case_id"]
+            for item in summary["cases"]
+            if set(item["release_gate"].get("finding_codes") or []) == {"human_eval_missing"}
+        ],
     }
+    summary["acceptance"] = _acceptance_checks(summary)
 
     summary_path = root / "summary.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -257,11 +289,93 @@ def main() -> int:
     args.out_root.mkdir(parents=True, exist_ok=True)
     (args.out_root / "latest_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     (args.out_root / "latest_summary.md").write_text(_summary_md(summary), encoding="utf-8")
-    print(json.dumps({"summary": str(summary_path), "tokens": token_total}, ensure_ascii=False, indent=2))
-    return 0
+    print(json.dumps({"summary": str(summary_path), "tokens": token_total, "acceptance": summary["acceptance"]}, ensure_ascii=False, indent=2))
+    return 0 if summary["acceptance"].get("status") == "passed" else 1
 
 
-def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_timeout: int) -> dict[str, Any]:
+def _acceptance_checks(summary: dict[str, Any]) -> dict[str, Any]:
+    by_case = {
+        str(item.get("case_id")): item
+        for item in summary.get("cases", [])
+        if isinstance(item, dict) and item.get("case_id")
+    }
+    flagship = by_case.get("env_carbon_did_aea") or {}
+    rdd = by_case.get("urban_lez_rdd_generic") or {}
+
+    def _checks(item: dict[str, Any]) -> dict[str, Any]:
+        return item.get("static_checks") if isinstance(item.get("static_checks"), dict) else {}
+
+    def _release_codes(item: dict[str, Any]) -> set[str]:
+        release = item.get("release_gate") if isinstance(item.get("release_gate"), dict) else {}
+        return {str(code) for code in (release.get("finding_codes") or [])}
+
+    checks = [
+        {
+            "name": "flagship_real_skill4econ",
+            "passed": (flagship.get("skill4econ") or {}).get("mode") == "real_skill4econ",
+        },
+        {
+            "name": "flagship_backend_live",
+            "passed": (flagship.get("backends") or {}).get("status") == "live",
+        },
+        {
+            "name": "flagship_tier_a",
+            "passed": _checks(flagship).get("draft_tier") == "A",
+        },
+        {
+            "name": "flagship_pdf_produced",
+            "passed": bool(_checks(flagship).get("pdf_exists")),
+        },
+        {
+            "name": "flagship_main_claims_paper_ready",
+            "passed": (
+                _checks(flagship).get("claim_status") == "passed"
+                and _checks(flagship).get("safe_claim_count", 0) > 0
+                and _checks(flagship).get("evidence_pack_status") == "passed"
+                and _checks(flagship).get("run_validation_status") == "passed"
+            ),
+        },
+        {
+            "name": "flagship_release_only_human_eval_missing",
+            "passed": _release_codes(flagship) == {"human_eval_missing"},
+        },
+        {
+            "name": "rdd_real_skill4econ",
+            "passed": (rdd.get("skill4econ") or {}).get("mode") == "real_skill4econ",
+        },
+        {
+            "name": "rdd_backend_live",
+            "passed": (rdd.get("backends") or {}).get("status") == "live",
+        },
+        {
+            "name": "rdd_tier_b_or_better",
+            "passed": _checks(rdd).get("draft_tier") in {"A", "B"},
+        },
+        {
+            "name": "rdd_evidence_pack_valid",
+            "passed": _checks(rdd).get("evidence_pack_status") == "passed",
+        },
+        {
+            "name": "rdd_tier_b_artifacts_complete",
+            "passed": _checks(rdd).get("rdd_tier_b_missing_or_incomplete_artifacts") == [],
+        },
+    ]
+    failed = [item for item in checks if not item["passed"]]
+    return {
+        "status": "passed" if not failed else "failed",
+        "checks": checks,
+        "failed": failed,
+    }
+
+
+def _run_case(
+    *,
+    case: SmokeCase,
+    root: Path,
+    codex_path: str | None,
+    codex_timeout: int,
+    backend_certification: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     case_dir = root / case.case_id
     inputs_dir = case_dir / "inputs"
     pack_dir = case_dir / "manuscript_pack"
@@ -271,6 +385,12 @@ def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_time
     if case.case_id == "env_carbon_did_aea":
         skill4econ_run = _run_env_carbon_skill4econ_case(case, inputs_dir)
         run_dir = Path(str(skill4econ_run.get("run_dir") or inputs_dir / "skill4econ_run_missing"))
+        skill4econ_run["validation"] = _validate_skill4econ_run(run_dir)
+        _write_case_intake_and_refs(case, inputs_dir)
+    elif case.case_id == "urban_lez_rdd_generic":
+        skill4econ_run = _run_urban_lez_rdrobust_case(case, inputs_dir)
+        run_dir = Path(str(skill4econ_run.get("run_dir") or inputs_dir / "skill4econ_run_missing"))
+        skill4econ_run["validation"] = _validate_skill4econ_run(run_dir)
         _write_case_intake_and_refs(case, inputs_dir)
     else:
         run_dir = inputs_dir / "skill4econ_run"
@@ -299,8 +419,6 @@ def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_time
         case.venue,
         "--out",
         str(pack_dir),
-        "--latex-command",
-        "definitely_missing_pdflatex",
     ]
     write_result = _run_command(write_cmd, cwd=Path.cwd(), timeout=120)
 
@@ -333,6 +451,7 @@ def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_time
             "skill4econ_run_dir": str(run_dir),
         },
         "skill4econ": skill4econ_run,
+        "backends": _case_backend_status(case, backend_certification or {}),
         "write": write_result,
         "release_gate": {
             **gate_result,
@@ -343,6 +462,93 @@ def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_time
         "static_checks": static_checks,
         "codex_review": codex_review,
     }
+
+
+def _run_backend_certification(root: Path) -> dict[str, Any]:
+    cert_root = root / "backend_certification"
+    spec_path = cert_root / "backend_certification_spec.json"
+    spec = {
+        "run_spxtregress": False,
+        "run_ppmlhdfe": False,
+        "r_probe_timeout": 20,
+    }
+    _write_json(spec_path, spec)
+    command = [
+        sys.executable,
+        "-m",
+        "skill4econ.cli",
+        "run",
+        "--engine",
+        "python",
+        "--method",
+        "live_backend_certification",
+        "--spec",
+        str(spec_path.resolve()),
+        "--output",
+        str(cert_root.resolve()),
+        "--run",
+    ]
+    result = _run_command(command, cwd=Path.cwd(), timeout=180)
+    run_dir = _extract_run_dir_from_cli_stdout(result.get("stdout_tail") or "")
+    if not run_dir:
+        candidates = sorted(
+            (cert_root / "live_backend_certification").glob("*/backend_certification.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            run_dir = str(candidates[0].parent)
+    artifact = Path(run_dir) / "backend_certification.json" if run_dir else cert_root / "backend_certification.json"
+    payload = _load_json(artifact)
+    return {
+        "mode": "live_backend_certification",
+        "command": result.get("command"),
+        "returncode": result.get("returncode"),
+        "elapsed_sec": result.get("elapsed_sec"),
+        "run_dir": run_dir,
+        "artifact": str(artifact),
+        "status": payload.get("status") or "missing_artifact",
+        "payload": payload,
+        "stdout_tail": result.get("stdout_tail"),
+        "stderr_tail": result.get("stderr_tail"),
+    }
+
+
+def _case_backend_status(case: SmokeCase, certification: dict[str, Any]) -> dict[str, Any]:
+    payload = certification.get("payload") if isinstance(certification.get("payload"), dict) else {}
+    required = {
+        "env_carbon_did_aea": ["python_differences"],
+        "urban_lez_rdd_generic": ["python_rdrobust", "python_rddensity"],
+    }.get(case.case_id, [])
+    rows = _backend_rows(payload)
+    by_backend = {str(row.get("backend")): row for row in rows}
+    missing = [name for name in required if str(by_backend.get(name, {}).get("status")) != "ok"]
+    if required:
+        status = "live" if not missing else "fail-closed"
+    else:
+        status = "partially-live" if any(str(row.get("status")) == "ok" for row in rows) else "fail-closed"
+    return {
+        "status": status,
+        "required": required,
+        "missing_or_failed_required": missing,
+        "certification_artifact": certification.get("artifact"),
+        "rows": rows,
+    }
+
+
+def _backend_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in ("python_differences", "python_rdrobust", "python_rddensity"):
+        section = payload.get(key)
+        if isinstance(section, dict):
+            rows.extend([row for row in section.get("rows") or [] if isinstance(row, dict)])
+    r_backends = payload.get("r_backends")
+    if isinstance(r_backends, dict):
+        rows.extend([row for row in r_backends.get("rows") or [] if isinstance(row, dict)])
+    xsmle = payload.get("stata_xsmle")
+    if isinstance(xsmle, dict):
+        rows.append({"backend": "stata_xsmle", "status": xsmle.get("status"), "available": xsmle.get("available")})
+    return rows
 
 
 def _write_synthetic_case_run(case: SmokeCase, run_dir: Path) -> None:
@@ -407,26 +613,38 @@ def _run_env_carbon_skill4econ_case(case: SmokeCase, inputs_dir: Path) -> dict[s
     spec_path = inputs_dir / "did_paper_run_spec.json"
     runs_dir = inputs_dir / "skill4econ_runs"
     rows: list[dict[str, Any]] = []
-    for plant in range(1, 41):
-        exposed = int(plant <= 20)
+    cohort_by_plant: dict[int, int] = {}
+    for plant in range(1, 61):
+        if plant <= 15:
+            cohort_by_plant[plant] = 2018
+        elif plant <= 30:
+            cohort_by_plant[plant] = 2019
+        elif plant <= 45:
+            cohort_by_plant[plant] = 2020
+        else:
+            cohort_by_plant[plant] = 0
+    for plant in range(1, 61):
+        adoption_year = cohort_by_plant[plant]
         province_group = "pilot_core" if plant % 2 == 0 else "neighboring"
         baseline_size_group = "large" if plant in {1, 2, 3, 4, 5, 6, 13, 14, 15, 16, 17, 18} else "small"
         province_index = 0.03 * (plant % 5)
-        for year in range(2015, 2023):
-            post = int(year >= 2019)
+        for year in range(2014, 2023):
+            exposed = int(adoption_year > 0 and year >= adoption_year)
             placebo_post = int(year >= 2017)
-            effect = exposed * post * (-0.08 - 0.015 * (province_group == "pilot_core") - 0.01 * (baseline_size_group == "large"))
+            event_time = year - adoption_year if adoption_year > 0 else ""
+            effect = exposed * (-0.08 - 0.015 * (province_group == "pilot_core") - 0.01 * (baseline_size_group == "large"))
             rows.append(
                 {
                     "plant_id": plant,
                     "year": year,
                     "log_co2_intensity": 1.9
-                    + 0.015 * (year - 2015)
+                    + 0.015 * (year - 2014)
                     + province_index
                     + 0.01 * (plant % 3)
                     + effect,
                     "carbon_market_exposure": exposed,
-                    "post": post,
+                    "adoption_year": adoption_year,
+                    "event_time": event_time,
                     "placebo_post": placebo_post,
                     "province_group": province_group,
                     "baseline_size_group": baseline_size_group,
@@ -435,14 +653,18 @@ def _run_env_carbon_skill4econ_case(case: SmokeCase, inputs_dir: Path) -> dict[s
     _write_csv(data_path, rows)
     spec = {
         "data": str(data_path.resolve()),
-        "design_type": "simple_2x2_did",
+        "design_type": "staggered_adoption_did",
         "id": "plant_id",
         "time": "year",
         "y": "log_co2_intensity",
-        "treat": "carbon_market_exposure",
-        "post": "post",
+        "gvar": "adoption_year",
         "cluster": "plant_id",
         "engine_policy": "python",
+        "did_estimators": ["cs_did_attgt"],
+        "exclude_estimators": ["twfe", "event_study_twfe"],
+        "control_group": "never_treated",
+        "boot_iterations": 0,
+        "n_jobs": 1,
         "event_window": [-3, 3],
         "base_period": -1,
         "placebo_tests": [{"name": "fake_2017_timing", "post": "placebo_post"}],
@@ -481,14 +703,132 @@ def _run_env_carbon_skill4econ_case(case: SmokeCase, inputs_dir: Path) -> dict[s
     }
 
 
+def _run_urban_lez_rdrobust_case(case: SmokeCase, inputs_dir: Path) -> dict[str, Any]:
+    data_path = inputs_dir / "urban_lez_rdd.csv"
+    spec_path = inputs_dir / "rdrobust_rdd_spec.json"
+    runs_dir = inputs_dir / "skill4econ_runs"
+    rows: list[dict[str, Any]] = []
+    for block in range(1, 161):
+        distance = (block - 80.5) / 40
+        inside = int(distance >= 0)
+        district = f"d{block % 8}"
+        baseline = 5.3 + 0.08 * (block % 5) + 0.02 * (block % 3)
+        for week in range(1, 9):
+            baseline_log_visits = 5.1 + 0.025 * abs(distance) + 0.003 * week
+            road_access_index = 0.8 + 0.04 * abs(distance) - 0.001 * week
+            y = baseline + 0.12 * distance - 0.05 * inside + 0.004 * week + (((block * 11 + week * 7) % 9) - 4) / 400
+            rows.append(
+                {
+                    "block_id": block,
+                    "week": week,
+                    "distance_to_boundary_km": round(distance, 6),
+                    "inside_low_emission_zone": inside,
+                    "log_weekly_visits": round(y, 6),
+                    "baseline_log_visits": round(baseline_log_visits, 6),
+                    "road_access_index": round(road_access_index, 6),
+                    "district": district,
+                }
+            )
+    _write_csv(data_path, rows)
+    spec = {
+        "data": str(data_path.resolve()),
+        "y": "log_weekly_visits",
+        "running": "distance_to_boundary_km",
+        "cutoff": 0,
+        "bandwidth": 1.5,
+        "cluster": "block_id",
+        "covars": ["baseline_log_visits", "road_access_index"],
+        "covariate_continuity": ["baseline_log_visits", "road_access_index"],
+        "donut_holes": [0.05, 0.1, 0.2],
+        "variable_units": {
+            "log_weekly_visits": case.unit_label,
+            "distance_to_boundary_km": "kilometers from the low-emission-zone boundary",
+            "baseline_log_visits": "pre-policy log weekly visits",
+            "road_access_index": "pre-policy road access index",
+        },
+        "output_dir": str(runs_dir.resolve()),
+    }
+    _write_json(spec_path, spec)
+    command = [
+        sys.executable,
+        "-m",
+        "skill4econ.cli",
+        "run",
+        "--engine",
+        "python",
+        "--method",
+        "rdrobust_rdd",
+        "--spec",
+        str(spec_path.resolve()),
+        "--output",
+        str(runs_dir.resolve()),
+        "--run",
+    ]
+    result = _run_command(command, cwd=Path.cwd(), timeout=120)
+    run_dir = _extract_run_dir_from_cli_stdout(result.get("stdout_tail") or "")
+    if run_dir:
+        provenance = Path(run_dir) / "provenance.yaml"
+        provenance.write_text("data_provenance: author_supplied\n", encoding="utf-8")
+    return {
+        "mode": "real_skill4econ",
+        "command": result.get("command"),
+        "returncode": result.get("returncode"),
+        "elapsed_sec": result.get("elapsed_sec"),
+        "run_dir": run_dir,
+        "stdout_tail": result.get("stdout_tail"),
+        "stderr_tail": result.get("stderr_tail"),
+    }
+
+
+def _validate_skill4econ_run(run_dir: Path) -> dict[str, Any]:
+    if not run_dir.exists():
+        return {
+            "status": "failed",
+            "returncode": None,
+            "artifact": str(run_dir / "validation_report.json"),
+            "message": "run_dir missing; validation was not run",
+        }
+    command = [
+        sys.executable,
+        "-m",
+        "skill4econ.cli",
+        "validate-run",
+        "--run-dir",
+        str(run_dir.resolve()),
+        "--strict",
+    ]
+    result = _run_command(command, cwd=Path.cwd(), timeout=90)
+    artifact = run_dir / "validation_report.json"
+    payload = _load_json(artifact)
+    return {
+        "command": result.get("command"),
+        "returncode": result.get("returncode"),
+        "elapsed_sec": result.get("elapsed_sec"),
+        "artifact": str(artifact),
+        "status": payload.get("status") or ("passed" if result.get("returncode") == 0 else "failed"),
+        "stdout_tail": result.get("stdout_tail"),
+        "stderr_tail": result.get("stderr_tail"),
+    }
+
+
 def _write_case_intake_and_refs(case: SmokeCase, inputs_dir: Path) -> None:
-    outcome_variable = "log_co2_intensity" if case.case_id == "env_carbon_did_aea" else case.main_term
-    unit_id = "plant_id" if case.case_id == "env_carbon_did_aea" else "unit_id"
+    if case.case_id == "env_carbon_did_aea":
+        outcome_variable = "log_co2_intensity"
+        unit_id = "plant_id"
+        time_variable = "year"
+    elif case.case_id == "urban_lez_rdd_generic":
+        outcome_variable = "log_weekly_visits"
+        unit_id = "block_id"
+        time_variable = "week"
+    else:
+        outcome_variable = case.main_term
+        unit_id = "unit_id"
+        time_variable = "year"
     registry = [
         {"name": outcome_variable, "role": "outcome", "source": "author"},
         {"name": case.main_term, "role": "treatment exposure policy", "source": "author"},
         {"name": unit_id, "role": "unit_id fixed_effect cluster", "source": "author"},
-        {"name": "year", "role": "time fixed_effect event_time", "source": "author"},
+        {"name": time_variable, "role": "time fixed_effect event_time", "source": "author"},
     ]
     deduped_registry: list[dict[str, str]] = []
     seen_registry_names: set[str] = set()
@@ -832,6 +1172,8 @@ def _static_checks(case: SmokeCase, pack_dir: Path) -> dict[str, Any]:
         "did_tier_a_incomplete_artifacts": metrics.get("did_tier_a_incomplete_artifacts"),
         "did_tier_b_missing_artifacts": metrics.get("did_tier_b_missing_artifacts"),
         "did_tier_b_incomplete_artifacts": metrics.get("did_tier_b_incomplete_artifacts"),
+        "rdd_tier_a_missing_or_incomplete_artifacts": metrics.get("rdd_tier_a_missing_or_incomplete_artifacts"),
+        "rdd_tier_b_missing_or_incomplete_artifacts": metrics.get("rdd_tier_b_missing_or_incomplete_artifacts"),
         "sections_floor_count": metrics.get("sections_floor_count"),
         "unresolved_numeric_placeholders": "{{" in section_and_main_text,
         "author_report_unrendered_claim_placeholders": "{{" in existing_text.get("AUTHOR_REPORT.md", ""),
@@ -941,6 +1283,13 @@ def _extract_run_dir_from_cli_stdout(stdout: str) -> str | None:
             run_dir = payload.get("run_dir") or (payload.get("manifest") or {}).get("run_dir")
             if run_dir:
                 return str(run_dir)
+    for match in reversed(list(re.finditer(r'"artifact_manifest"\s*:\s*"([^"]+artifact_manifest\.json)"', text))):
+        try:
+            artifact_manifest = Path(json.loads(f'"{match.group(1)}"'))
+        except Exception:
+            artifact_manifest = Path(match.group(1).replace("\\\\", "\\"))
+        if artifact_manifest.name == "artifact_manifest.json":
+            return str(artifact_manifest.parent)
     return None
 
 
@@ -983,8 +1332,8 @@ def _run_command(
         "command": _redact_command(cmd),
         "returncode": proc.returncode,
         "elapsed_sec": round(time.perf_counter() - started, 3),
-        "stdout_tail": proc.stdout[-3000:],
-        "stderr_tail": proc.stderr[-3000:],
+        "stdout_tail": proc.stdout[-12000:],
+        "stderr_tail": proc.stderr[-12000:],
     }
 
 
@@ -1071,8 +1420,8 @@ def _summary_md(summary: dict[str, Any]) -> str:
         "",
         "## Cases",
         "",
-        "| Case | Source | Tier | Venue | Write | Release gate | PDF | Tokens | Key issues |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---|",
+        "| Case | Source | Backends | Tier | Venue | Write | Release gate | PDF | Tokens | Key issues |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for item in summary["cases"]:
         checks = item["static_checks"]
@@ -1091,6 +1440,12 @@ def _summary_md(summary: dict[str, Any]) -> str:
             issues.append("DID A missing: " + ",".join(map(str, missing_a[:4])))
         if incomplete_a:
             issues.append("DID A incomplete: " + ",".join(map(str, incomplete_a[:4])))
+        rdd_missing_b = checks.get("rdd_tier_b_missing_or_incomplete_artifacts") or []
+        rdd_missing_a = checks.get("rdd_tier_a_missing_or_incomplete_artifacts") or []
+        if rdd_missing_b:
+            issues.append("RDD B missing/incomplete: " + ",".join(map(str, rdd_missing_b[:4])))
+        elif rdd_missing_a:
+            issues.append("RDD A missing/incomplete: " + ",".join(map(str, rdd_missing_a[:4])))
         if checks["public_absolute_path_leaks"]:
             issues.append("public absolute path leak")
         if checks.get("portable_path_references"):
@@ -1110,6 +1465,7 @@ def _summary_md(summary: dict[str, Any]) -> str:
                 [
                     f"`{item['case_id']}`",
                     source,
+                    (item.get("backends") or {}).get("status") or "unknown",
                     str(checks.get("draft_tier")),
                     item["venue"],
                     str(item["write"]["returncode"]),
@@ -1128,6 +1484,12 @@ def _summary_md(summary: dict[str, Any]) -> str:
             "",
             "```json",
             json.dumps(summary["totals"], ensure_ascii=False, indent=2),
+            "```",
+            "",
+            "## Acceptance",
+            "",
+            "```json",
+            json.dumps(summary.get("acceptance") or {}, ensure_ascii=False, indent=2),
             "```",
             "",
         ]

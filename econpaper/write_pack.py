@@ -68,7 +68,7 @@ def write_manuscript_pack(
     refs_path: str | Path,
     out_dir: str | Path,
     venue: str | None = None,
-    latex_command: str = "pdflatex",
+    latex_command: str = "auto",
     model_table_paths: list[str | Path] | None = None,
     mode: str = "draft",
     human_eval_path: str | Path | None = None,
