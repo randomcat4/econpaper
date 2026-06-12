@@ -49,6 +49,7 @@ EVIDENCE_ITEM_REQUIRED = {
     "variable",
     "provenance_hash",
 }
+ARTIFACT_MANIFEST_TYPE_FIELD = "evidence_type"
 
 
 @dataclass
@@ -114,6 +115,7 @@ def build_evidence_pack(
     artifact_manifest = artifact_manifest or {}
     run_validation = run_validation or {}
     provenance = provenance or {}
+    artifact_type_field = _artifact_manifest_type_field(artifact_manifest)
     pack = {
         "schema_version": EVIDENCE_PACK_SCHEMA_VERSION,
         "source": {
@@ -121,7 +123,7 @@ def build_evidence_pack(
             "workflow": artifact_manifest.get("workflow") or run_validation.get("method_or_workflow"),
             "data_provenance": run_validation.get("data_provenance") or provenance.get("data_provenance") or "unknown",
         },
-        "artifacts": _normalized_artifacts(evidence_ledger, artifact_manifest, run_path),
+        "artifacts": _normalized_artifacts(evidence_ledger, artifact_manifest, run_path, artifact_type_field=artifact_type_field),
         "evidence_items": [
             dict(item)
             for item in evidence_ledger.get("evidence_items", [])
@@ -130,6 +132,7 @@ def build_evidence_pack(
         "variable_semantics": evidence_ledger.get("variable_semantics", {}),
     }
     result = validate_evidence_pack(pack, run_dir=run_path)
+    _validate_artifact_manifest_contract(artifact_manifest, result)
     pack["validation"] = {
         "status": result.status,
         "has_hard_blocks": result.has_hard_blocks,
@@ -299,6 +302,43 @@ def validate_evidence_pack(
     return result
 
 
+def _artifact_manifest_type_field(artifact_manifest: dict[str, Any]) -> str:
+    contract = artifact_manifest.get("evidence_contract") if isinstance(artifact_manifest, dict) else None
+    if isinstance(contract, dict) and isinstance(contract.get("artifact_type_field"), str):
+        return str(contract["artifact_type_field"])
+    return ARTIFACT_MANIFEST_TYPE_FIELD
+
+
+def _validate_artifact_manifest_contract(artifact_manifest: dict[str, Any], result: EvidencePackResult) -> None:
+    if not isinstance(artifact_manifest, dict):
+        return
+    artifacts = artifact_manifest.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        return
+    contract = artifact_manifest.get("evidence_contract")
+    if not isinstance(contract, dict):
+        result.add_issue(
+            "artifact_manifest_contract_missing",
+            "hard_block",
+            "Artifact manifest with artifacts must declare evidence_contract for EvidencePack v2.",
+        )
+        return
+    if contract.get("schema_version") != EVIDENCE_PACK_SCHEMA_VERSION:
+        result.add_issue(
+            "artifact_manifest_schema_version_invalid",
+            "hard_block",
+            f"Expected artifact_manifest.evidence_contract.schema_version={EVIDENCE_PACK_SCHEMA_VERSION}.",
+            details={"actual": contract.get("schema_version")},
+        )
+    if contract.get("artifact_type_field") != ARTIFACT_MANIFEST_TYPE_FIELD:
+        result.add_issue(
+            "artifact_manifest_type_field_invalid",
+            "hard_block",
+            f"Expected artifact_manifest.evidence_contract.artifact_type_field={ARTIFACT_MANIFEST_TYPE_FIELD}.",
+            details={"actual": contract.get("artifact_type_field")},
+        )
+
+
 def artifact_types_from_pack(pack: dict[str, Any]) -> set[str]:
     return {
         str(artifact.get("artifact_type"))
@@ -345,6 +385,8 @@ def _normalized_artifacts(
     evidence_ledger: dict[str, Any],
     artifact_manifest: dict[str, Any],
     run_dir: Path | None,
+    *,
+    artifact_type_field: str = ARTIFACT_MANIFEST_TYPE_FIELD,
 ) -> list[dict[str, Any]]:
     artifacts: dict[tuple[str, str], dict[str, Any]] = {}
     for item in evidence_ledger.get("artifacts", []) if isinstance(evidence_ledger, dict) else []:
@@ -371,7 +413,7 @@ def _normalized_artifacts(
             continue
         rel_path = str(item.get("path") or "")
         artifact_type = normalize_artifact_type(
-            item.get("artifact_type") or item.get("evidence_type") or item.get("type"),
+            item.get(artifact_type_field) or item.get("artifact_type") or item.get("evidence_type") or item.get("type"),
             rel_path,
             item.get("role"),
         )

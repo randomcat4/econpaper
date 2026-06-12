@@ -52,7 +52,12 @@ def _run_dir(root: Path, *, mock_runner: bool = False, evidence_value: float | N
             "workflow": "ols_cluster",
             "run_id": "fixture",
             "status": "success",
-            "artifacts": [{"path": "model_table.json", "required": True, "exists": True}],
+            "evidence_contract": {
+                "consumer": "econpaper",
+                "schema_version": "evidence_pack.v2",
+                "artifact_type_field": "evidence_type",
+            },
+            "artifacts": [{"path": "model_table.json", "type": "model_result", "evidence_type": "model_table", "required": True, "exists": True}],
             "missing_required_artifacts": [],
         },
     )

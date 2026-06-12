@@ -25,6 +25,14 @@ def _write_csv(path: Path, rows: list[dict]) -> Path:
     return path
 
 
+def _evidence_contract() -> dict:
+    return {
+        "consumer": "econpaper",
+        "schema_version": "evidence_pack.v2",
+        "artifact_type_field": "evidence_type",
+    }
+
+
 def _run_dir(root: Path) -> Path:
     run_dir = root / "run"
     run_dir.mkdir()
@@ -35,7 +43,8 @@ def _run_dir(root: Path) -> Path:
             "workflow": "ols_cluster",
             "run_id": "fixture_run",
             "status": "success",
-            "artifacts": [{"path": "model_table.csv", "type": "model_table", "exists": True}],
+            "evidence_contract": _evidence_contract(),
+            "artifacts": [{"path": "model_table.csv", "type": "table", "evidence_type": "model_table", "exists": True}],
             "missing_required_artifacts": [],
         },
     )
@@ -71,7 +80,8 @@ def _valid_run_contract(run_dir: Path) -> None:
             "workflow": "ols_cluster",
             "run_id": "fixture_run",
             "status": "success",
-            "artifacts": [{"path": "model_table.csv", "type": "model_table", "required": True, "exists": True}],
+            "evidence_contract": _evidence_contract(),
+            "artifacts": [{"path": "model_table.csv", "type": "table", "evidence_type": "model_table", "required": True, "exists": True}],
             "missing_required_artifacts": [],
         },
     )
@@ -167,8 +177,9 @@ def test_write_evidence_ledger_merges_manifest_artifacts_for_downstream_gates(tm
             "workflow": "did_paper_run",
             "run_id": "fixture_run",
             "status": "success",
+            "evidence_contract": _evidence_contract(),
             "artifacts": [
-                {"path": "model_table.csv", "type": "model_table", "exists": True},
+                {"path": "model_table.csv", "type": "table", "evidence_type": "model_table", "exists": True},
                 {"path": "event_study.csv", "type": "table", "evidence_type": "event_study", "exists": True},
                 {"path": "pretrend_test.json", "type": "model_result", "evidence_type": "pretrend_test", "exists": True},
                 {"path": "cohort_table.csv", "type": "table", "evidence_type": "cohort_table", "exists": True},
@@ -196,6 +207,7 @@ def test_tex_table_path_alone_does_not_create_evidence(tmp_path: Path) -> None:
             "workflow": "ols_cluster",
             "run_id": "fixture_run",
             "status": "success",
+            "evidence_contract": _evidence_contract(),
             "artifacts": [{"path": "table1.tex", "type": "table", "exists": True}],
             "missing_required_artifacts": [],
         },
@@ -215,7 +227,8 @@ def test_json_main_effect_table_is_supported(tmp_path: Path) -> None:
             "workflow": "ols_cluster",
             "run_id": "fixture_run",
             "status": "success",
-            "artifacts": [{"path": "model_table.json", "type": "model_table", "exists": True}],
+            "evidence_contract": _evidence_contract(),
+            "artifacts": [{"path": "model_table.json", "type": "model_result", "evidence_type": "model_table", "exists": True}],
             "missing_required_artifacts": [],
         },
     )

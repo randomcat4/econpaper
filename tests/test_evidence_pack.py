@@ -56,10 +56,15 @@ def test_build_evidence_pack_normalizes_did_manifest_artifacts() -> None:
         artifact_manifest={
             "workflow": "did",
             "run_id": "fixture",
+            "evidence_contract": {
+                "consumer": "econpaper",
+                "schema_version": "evidence_pack.v2",
+                "artifact_type_field": "evidence_type",
+            },
             "artifacts": [
-                {"path": "event_study.csv", "type": "table", "role": "dynamic_effect", "exists": True},
-                {"path": "pretrend_test.json", "type": "metadata", "exists": True},
-                {"path": "figures/manifest.yaml", "type": "metadata", "exists": True},
+                {"path": "event_study.csv", "type": "table", "evidence_type": "event_study", "role": "dynamic_effect", "exists": True},
+                {"path": "pretrend_test.json", "type": "metadata", "evidence_type": "pretrend_test", "exists": True},
+                {"path": "figures/manifest.yaml", "type": "metadata", "evidence_type": "figure_manifest", "exists": True},
             ],
         },
         run_validation={"data_provenance": "author_supplied"},
@@ -70,6 +75,48 @@ def test_build_evidence_pack_normalizes_did_manifest_artifacts() -> None:
     artifact_types = {item["artifact_type"] for item in result.pack["artifacts"]}
     assert {"model_table", "event_study", "pretrend_test", "figure_manifest"} <= artifact_types
     assert result.pack["source"]["data_provenance"] == "author_supplied"
+
+
+def test_artifact_manifest_contract_schema_version_is_enforced() -> None:
+    result = build_evidence_pack(
+        evidence_ledger=_ledger(),
+        artifact_manifest={
+            "workflow": "did",
+            "run_id": "fixture",
+            "evidence_contract": {
+                "consumer": "econpaper",
+                "schema_version": "evidence_pack.v999",
+                "artifact_type_field": "evidence_type",
+            },
+            "artifacts": [{"path": "model_table.csv", "type": "table", "evidence_type": "model_table", "exists": True}],
+        },
+        run_validation={"data_provenance": "author_supplied"},
+    )
+
+    assert result.has_hard_blocks is True
+    assert "artifact_manifest_schema_version_invalid" in {issue.code for issue in result.issues}
+    assert result.pack["validation"]["status"] == "failed"
+
+
+def test_artifact_manifest_contract_type_field_is_enforced() -> None:
+    result = build_evidence_pack(
+        evidence_ledger=_ledger(),
+        artifact_manifest={
+            "workflow": "did",
+            "run_id": "fixture",
+            "evidence_contract": {
+                "consumer": "econpaper",
+                "schema_version": "evidence_pack.v2",
+                "artifact_type_field": "type",
+            },
+            "artifacts": [{"path": "model_table.csv", "type": "model_table", "exists": True}],
+        },
+        run_validation={"data_provenance": "author_supplied"},
+    )
+
+    assert result.has_hard_blocks is True
+    assert "artifact_manifest_type_field_invalid" in {issue.code for issue in result.issues}
+    assert result.pack["validation"]["status"] == "failed"
 
 
 def test_write_and_load_evidence_pack_requires_embedded_validation(tmp_path: Path) -> None:

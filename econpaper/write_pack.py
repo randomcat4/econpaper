@@ -15,6 +15,7 @@ from .design_profiler import write_design_profile
 from .evidence import write_evidence_ledger
 from .linting import parse_bibtex_keys
 from .numeric_renderer import render_numeric_template
+from .release_gate import write_release_gate
 from .run_validation import write_run_validation
 from .section_writer import write_sections
 from .table_generator import write_publication_table
@@ -70,6 +71,7 @@ def write_manuscript_pack(
     latex_command: str = "pdflatex",
     model_table_paths: list[str | Path] | None = None,
     mode: str = "draft",
+    human_eval_path: str | Path | None = None,
 ) -> WritePackResult:
     if mode not in {"draft", "strict"}:
         raise ValueError("write mode must be 'draft' or 'strict'")
@@ -175,6 +177,17 @@ def write_manuscript_pack(
             "hard_block",
             f"Strict mode requires Tier A; current pack is Tier {tiering.draft_tier}.",
         )
+    if mode == "strict":
+        release = write_release_gate(
+            pack_dir=out_path,
+            human_eval_path=human_eval_path,
+            out_dir=out_path / "release_gate",
+        )
+        result.manifest["steps"].append({"name": "release_gate", "status": release.status})
+        result.manifest["outputs"]["release_gate"] = str(out_path / "release_gate")
+        for finding in release.findings:
+            if finding.tier == "hard_block":
+                result.add_issue(f"release_gate_{finding.code}", "hard_block", finding.message)
     if run_validation.status == "failed" or claims.has_hard_blocks or coherence.has_hard_blocks:
         result.add_issue("pack_has_unresolved_gates", "hard_block", "Manuscript pack was produced, but unresolved hard gates remain.")
     _append_tier_author_report(out_path, tiering, mode=mode, result=result)

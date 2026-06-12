@@ -1098,14 +1098,23 @@ def _write_pretrend_test(ctx: RunContext, event_rows: list[dict[str, Any]], base
     if not leads:
         return None
     p_values = [item["p_value"] for item in leads if item.get("p_value") is not None]
+    lead_estimates = [abs(float(item["estimate"])) for item in leads if item.get("estimate") is not None]
+    lead_t_stats = [
+        abs(float(item["estimate"]) / float(item["std_error"]))
+        for item in leads
+        if item.get("estimate") is not None and item.get("std_error") not in {None, 0, 0.0}
+    ]
     payload = {
         "version": "skill4econ.pretrend_test.v1",
         "test_type": "event_study_lead_screen",
         "formal_joint_test_available": False,
         "base_period": base_period,
         "lead_count": len(leads),
+        "pre_period_count": len(leads),
         "lead_p_values_available": len(p_values),
         "min_p_value": min(p_values) if p_values else None,
+        "max_abs_estimate": max(lead_estimates) if lead_estimates else None,
+        "max_abs_t": max(lead_t_stats) if lead_t_stats else None,
         "any_lead_p_below_0_05": any(value < 0.05 for value in p_values),
         "status": "computed_from_event_study_leads" if p_values else "lead_coefficients_without_p_values",
         "caveat": "This is a machine pretrend diagnostic from event-study lead coefficients, not a joint Wald test.",

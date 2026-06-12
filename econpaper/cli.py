@@ -204,6 +204,7 @@ def _cmd_write(args: argparse.Namespace) -> int:
         latex_command=args.latex_command,
         model_table_paths=args.model_table,
         mode=args.mode,
+        human_eval_path=args.human_eval,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -442,6 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Structured model_table.csv/json, including output from `econpaper import-table`. May be passed multiple times.",
     )
+    write.add_argument("--human-eval", type=Path, help="Human-evaluation JSON required for strict release-gate checks.")
     write.set_defaults(func=_cmd_write)
 
     quality_suite = sub.add_parser(

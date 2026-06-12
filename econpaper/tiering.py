@@ -414,11 +414,22 @@ def _check_pretrend_test(paths: list[Path]) -> dict[str, Any]:
     payloads = _read_json_objects(paths)
     rows = _read_rows([path for path in paths if path.suffix.lower() == ".csv"])
     has_stat = any(
-        _has_any(payload, ["p_value", "pvalue", "lead_p_value", "max_abs_t", "lead_count", "pre_period_count", "p_values"])
+        _has_any(payload, ["p_value", "pvalue", "lead_p_value", "min_p_value", "max_abs_t", "max_abs_estimate", "p_values", "joint_test_stat", "f_stat", "chi2"])
         for payload in payloads
-    ) or any(_has_any(row, ["p_value", "pvalue", "t_stat", "estimate", "coef"]) for row in rows)
+    ) or any(_has_any(row, ["p_value", "pvalue", "t_stat", "estimate", "coef", "std_error", "se"]) for row in rows)
+    has_pre_window = any(
+        _has_any(payload, ["lead_count", "pre_period_count", "n_pre_periods"])
+        for payload in payloads
+    ) or any(_has_any(row, ["event_time", "relative_time", "pre_period"]) for row in rows)
     issues = [] if has_stat else ["pretrend_test_requires_structured_statistic"]
-    return {"passed": has_stat, "issues": issues, "json_count": len(payloads), "row_count": len(rows)}
+    if has_stat and not has_pre_window:
+        issues.append("pretrend_test_requires_pre_period_metadata")
+    return {
+        "passed": has_stat and has_pre_window,
+        "issues": issues,
+        "json_count": len(payloads),
+        "row_count": len(rows),
+    }
 
 
 def _check_cohort_table(paths: list[Path]) -> dict[str, Any]:
@@ -507,9 +518,11 @@ def _check_figure_manifest(pack: Path, paths: list[Path]) -> dict[str, Any]:
     issues: list[str] = []
     if not has_event_study:
         issues.append("figure_manifest_requires_event_study_figure")
-    if figure_refs and not existing_refs:
+    if not figure_refs:
+        issues.append("figure_manifest_requires_explicit_figure_path")
+    elif not existing_refs:
         issues.append("figure_manifest_referenced_figures_missing")
-    return {"passed": bool(paths) and has_event_study and (not figure_refs or bool(existing_refs)), "issues": issues, "figure_refs": figure_refs}
+    return {"passed": bool(paths) and has_event_study and bool(existing_refs), "issues": issues, "figure_refs": figure_refs}
 
 
 def _read_rows(paths: list[Path]) -> list[dict[str, Any]]:

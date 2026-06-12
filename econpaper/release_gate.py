@@ -223,6 +223,10 @@ def _check_human_eval(path: Path | None, result: ReleaseGateResult) -> None:
     if not isinstance(evaluations, list) or len(evaluations) < 5:
         result.add_finding("human_eval_too_few", "hard_block", "At least five scholar evaluations are required.", path=str(path))
         return
+    scholar_evaluations = [
+        item for item in evaluations
+        if isinstance(item, dict) and _is_scholar_reviewer(item.get("reviewer_role"))
+    ]
     retentions = [_as_float(item.get("generated_text_retention")) for item in evaluations if isinstance(item, dict)]
     retentions = [value for value in retentions if value is not None]
     time_saved = sum(1 for item in evaluations if isinstance(item, dict) and item.get("time_saved") is True)
@@ -232,12 +236,15 @@ def _check_human_eval(path: Path | None, result: ReleaseGateResult) -> None:
     med = median(retentions) if retentions else 0.0
     result.metrics["human_eval"] = {
         "count": len(evaluations),
+        "scholar_count": len(scholar_evaluations),
         "median_generated_text_retention": med,
         "time_saved_count": time_saved,
         "silent_fabrication_reports": fabrications,
         "author_report_clearer_count": clearer,
         "feedback_attached_count": feedback,
     }
+    if len(scholar_evaluations) < 5:
+        result.add_finding("human_eval_scholar_reviewers_missing", "hard_block", "Human release gate requires at least five scholar evaluations.", path=str(path))
     if med < 0.50:
         result.add_finding("human_eval_retention_low", "hard_block", "Median generated-text retention must be at least 50%.", path=str(path))
     if time_saved < 4:
@@ -248,6 +255,14 @@ def _check_human_eval(path: Path | None, result: ReleaseGateResult) -> None:
         result.add_finding("human_eval_author_report_clarity_low", "hard_block", "At least three users must say AUTHOR_REPORT clarified next actions.", path=str(path))
     if feedback < len(evaluations):
         result.add_finding("human_eval_feedback_missing", "hard_block", "All human-evaluation feedback must be attached.", path=str(path))
+
+
+def _is_scholar_reviewer(role: Any) -> bool:
+    text = str(role or "").strip().lower()
+    if not text:
+        return False
+    scholar_terms = ("scholar", "professor", "faculty", "academic researcher", "research economist")
+    return any(term in text for term in scholar_terms)
 
 
 def _load_json(path: Path, result: ReleaseGateResult, label: str) -> dict[str, Any]:

@@ -70,7 +70,12 @@ def _valid_run(root: Path) -> Path:
             "workflow": "ols_cluster",
             "run_id": "fixture",
             "status": "success",
-            "artifacts": [{"path": "model_table.csv", "type": "model_table", "required": True, "exists": True}],
+            "evidence_contract": {
+                "consumer": "econpaper",
+                "schema_version": "evidence_pack.v2",
+                "artifact_type_field": "evidence_type",
+            },
+            "artifacts": [{"path": "model_table.csv", "type": "table", "evidence_type": "model_table", "required": True, "exists": True}],
             "missing_required_artifacts": [],
         },
     )
@@ -373,4 +378,7 @@ def test_write_cli_strict_mode_exits_nonzero_below_tier_a(tmp_path: Path) -> Non
     )
     assert proc.returncode == 1
     payload = json.loads(proc.stdout)
-    assert "draft_tier_below_strict_target" in {issue["code"] for issue in payload["issues"]}
+    issue_codes = {issue["code"] for issue in payload["issues"]}
+    assert "draft_tier_below_strict_target" in issue_codes
+    assert "release_gate_human_eval_missing" in issue_codes
+    assert (out / "release_gate" / "reports" / "internal" / "release_gate.json").exists()

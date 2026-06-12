@@ -116,8 +116,13 @@ def _pack(root: Path, *, placeholder: bool = False, magnitude: bool = True, auth
             "workflow": "did",
             "run_id": "fixture",
             "status": "success",
+            "evidence_contract": {
+                "consumer": "econpaper",
+                "schema_version": "evidence_pack.v2",
+                "artifact_type_field": "evidence_type",
+            },
             "artifacts": [
-                {"path": path, "type": artifact_type, "required": True, "exists": True}
+                {"path": path, "type": "table", "evidence_type": artifact_type, "required": True, "exists": True}
                 for artifact_type, path in artifact_paths.items()
             ],
             "missing_required_artifacts": [],
@@ -159,12 +164,20 @@ def _pack(root: Path, *, placeholder: bool = False, magnitude: bool = True, auth
     return root
 
 
-def _human_eval(path: Path, *, retention: float = 0.60, time_saved: int = 5, clearer: int = 5, fabrication: bool = False) -> Path:
+def _human_eval(
+    path: Path,
+    *,
+    retention: float = 0.60,
+    time_saved: int = 5,
+    clearer: int = 5,
+    fabrication: bool = False,
+    reviewer_role: str = "economics scholar",
+) -> Path:
     evaluations = []
     for idx in range(5):
         evaluations.append(
             {
-                "reviewer_role": "economics scholar",
+                "reviewer_role": reviewer_role,
                 "generated_text_retention": retention,
                 "time_saved": idx < time_saved,
                 "silent_fabrication_reported": fabrication and idx == 0,
@@ -199,6 +212,16 @@ def test_missing_human_eval_blocks_release(tmp_path: Path) -> None:
     result = run_release_gate(pack_dir=_pack(tmp_path / "pack"))
     assert result.has_hard_blocks is True
     assert "human_eval_missing" in {finding.code for finding in result.findings}
+
+
+def test_non_scholar_human_eval_blocks_release(tmp_path: Path) -> None:
+    result = run_release_gate(
+        pack_dir=_pack(tmp_path / "pack"),
+        human_eval_path=_human_eval(tmp_path / "human_eval.json", reviewer_role="intern"),
+    )
+    assert result.has_hard_blocks is True
+    assert result.metrics["human_eval"]["scholar_count"] == 0
+    assert "human_eval_scholar_reviewers_missing" in {finding.code for finding in result.findings}
 
 
 def test_low_retention_blocks_release(tmp_path: Path) -> None:
