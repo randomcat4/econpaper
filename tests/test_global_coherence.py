@@ -95,6 +95,7 @@ def test_global_coherence_passes_and_consolidates_author_report(tmp_path: Path) 
     assert "## Safe Claims" in report
     assert "## Flagged And Downgraded Claims" in report
     assert "## Expected Referee Questions" in report
+    assert "{{" not in report
     assert (tmp_path / "out" / "reports" / "internal" / "global_coherence.json").exists()
 
 

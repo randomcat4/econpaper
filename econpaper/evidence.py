@@ -5,9 +5,12 @@ import hashlib
 import json
 import math
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .evidence_pack import write_evidence_pack
 
 
 EVIDENCE_VERSION = "v3.0"
@@ -135,8 +138,9 @@ def write_evidence_ledger(
     model_table_paths: list[str | Path] | None = None,
     summary_stats_path: str | Path | None = None,
 ) -> EvidenceBuildResult:
+    run_path = Path(run_dir)
     result = build_evidence_ledger(
-        run_dir=run_dir,
+        run_dir=run_path,
         intake_profile_path=intake_profile_path,
         model_table_paths=model_table_paths,
         summary_stats_path=summary_stats_path,
@@ -145,6 +149,28 @@ def write_evidence_ledger(
     internal = out_path / "reports" / "internal"
     internal.mkdir(parents=True, exist_ok=True)
     out_path.mkdir(parents=True, exist_ok=True)
+    pack_result = write_evidence_pack(
+        evidence_ledger=result.ledger,
+        run_dir=run_path,
+        out_dir=out_path,
+        artifact_manifest_path=run_path / "artifact_manifest.json",
+        run_validation_path=internal / "run_validation.json",
+        provenance_path=run_path / "provenance.yaml",
+    )
+    result.ledger["evidence_pack"] = {
+        "schema_version": pack_result.pack.get("schema_version"),
+        "status": pack_result.status,
+        "path": "evidence_pack.json",
+    }
+    result.ledger["artifacts"] = _merge_pack_artifacts(result.ledger.get("artifacts", []), pack_result.pack.get("artifacts", []))
+    for issue in pack_result.issues:
+        result.add_issue(
+            f"evidence_pack_{issue.code}",
+            issue.severity,
+            issue.message,
+            issue.path,
+        )
+    _copy_evidence_pack_artifacts(pack_result.pack, run_path, out_path)
     ledger_text = json.dumps(result.ledger, ensure_ascii=False, indent=2)
     (out_path / "evidence_ledger.json").write_text(ledger_text, encoding="utf-8")
     (internal / "evidence_ledger.json").write_text(ledger_text, encoding="utf-8")
@@ -155,6 +181,46 @@ def write_evidence_ledger(
     )
     (out_path / "AUTHOR_REPORT.md").write_text(_author_report_text(result), encoding="utf-8")
     return result
+
+
+def _copy_evidence_pack_artifacts(pack: dict[str, Any], run_dir: Path, out_dir: Path) -> None:
+    for artifact in pack.get("artifacts", []) if isinstance(pack, dict) else []:
+        if not isinstance(artifact, dict):
+            continue
+        rel_path = str(artifact.get("path") or "")
+        if not rel_path:
+            continue
+        rel = Path(rel_path)
+        if rel.is_absolute() or any(part == ".." for part in rel.parts):
+            continue
+        source = run_dir / rel
+        target = out_dir / rel
+        if not source.exists() or not source.is_file():
+            continue
+        try:
+            if source.resolve() == target.resolve():
+                continue
+        except FileNotFoundError:
+            pass
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _merge_pack_artifacts(ledger_artifacts: list[Any], pack_artifacts: list[Any]) -> list[dict[str, Any]]:
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for artifact in ledger_artifacts + pack_artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        rel_path = str(artifact.get("path") or "")
+        artifact_type = str(artifact.get("artifact_type") or artifact.get("evidence_type") or artifact.get("type") or "")
+        if not rel_path or not artifact_type:
+            continue
+        key = (rel_path, artifact_type)
+        existing = merged.get(key, {})
+        merged[key] = {**artifact, **existing}
+        if existing.get("claimable") or artifact.get("claimable"):
+            merged[key]["claimable"] = True
+    return sorted(merged.values(), key=lambda item: (str(item.get("artifact_type") or ""), str(item.get("path") or "")))
 
 
 def _run_id(run_dir: Path) -> str:

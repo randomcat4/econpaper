@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .evidence_pack import load_evidence_pack
 from .linting import extract_numeric_uses
 
 
@@ -66,7 +67,9 @@ def build_claim_ledger(
     author_overrides_path: str | Path | None = None,
 ) -> ClaimLedgerBuildResult:
     result = ClaimLedgerBuildResult(claim_ledger={}, slot_map={"slots": {}})
-    evidence_ledger = _load_json(Path(evidence_ledger_path), result, "evidence_ledger")
+    evidence_path = Path(evidence_ledger_path)
+    evidence_ledger = _load_json(evidence_path, result, "evidence_ledger")
+    _validate_adjacent_evidence_pack(evidence_path, result)
     intake_profile = _load_json(Path(intake_profile_path), result, "intake_profile") if intake_profile_path else {}
     citation_safety = _load_json(Path(citation_safety_report_path), result, "citation_safety_report") if citation_safety_report_path else {}
     design_profile = _load_json(Path(design_profile_path), result, "design_profile") if design_profile_path else {}
@@ -159,6 +162,20 @@ def _load_json(path: Path, result: ClaimLedgerBuildResult, label: str) -> dict[s
     return payload
 
 
+def _validate_adjacent_evidence_pack(evidence_ledger_path: Path, result: ClaimLedgerBuildResult) -> None:
+    pack_path = evidence_ledger_path.with_name("evidence_pack.json")
+    if not pack_path.exists():
+        return
+    pack_result = load_evidence_pack(pack_path)
+    if pack_result.has_hard_blocks:
+        result.add_issue(
+            "evidence_pack_invalid",
+            "hard_block",
+            "Adjacent EvidencePack v2 failed validation; claim ledger will not import untrusted evidence.",
+            str(pack_path),
+        )
+
+
 def _run_validation_has_mock(run_validation: dict[str, Any]) -> bool:
     return bool(run_validation.get("mock_watermark_required") or run_validation.get("public_watermark"))
 
@@ -173,7 +190,7 @@ def _evidence_items_by_context(ledger: dict[str, Any]) -> list[dict[str, Any]]:
         if artifact.get("artifact_type") != "model_table":
             continue
         display_type = item.get("display_type")
-        if display_type not in {"coefficient", "standard_error", "p_value", "n"}:
+        if display_type not in {"coefficient", "standard_error", "p_value", "t_stat", "n"}:
             continue
         variable = str(item.get("variable") or item.get("row") or "term")
         model_id = str(item.get("model_id") or "model")
@@ -200,8 +217,9 @@ def _main_result_claim(
     coefficient = items["coefficient"]
     se = items.get("standard_error")
     p_value = items.get("p_value")
+    t_stat = items.get("t_stat")
     n_item = items.get("n")
-    variable_semantics = (ledger.get("variable_semantics") or {}).get(variable, {})
+    magnitude_variable, variable_semantics = _magnitude_variable_for_claim(variable, ledger, intake_profile)
     magnitude_ready = _magnitude_ready(variable_semantics)
 
     slots = slot_map.setdefault("slots", {})
@@ -215,7 +233,7 @@ def _main_result_claim(
     if magnitude_ready:
         slots[f"magnitude:{claim_id}"] = {
             "coefficient_evidence_id": coefficient["evidence_id"],
-            "variable": variable,
+            "variable": magnitude_variable,
             "kind": "sd_units",
         }
 
@@ -237,7 +255,7 @@ def _main_result_claim(
     reviewer_questions: list[str] = []
     if not magnitude_ready:
         flags.append("magnitude_context_missing")
-        reviewer_questions.append(f"What unit, mean, and standard deviation should be used to interpret `{variable}`?")
+        reviewer_questions.append(f"What unit, mean, and standard deviation should be used to interpret `{magnitude_variable or variable}`?")
     if not se or not p_value:
         flags.append("inference_statistic_missing")
         reviewer_questions.append("Should this claim be reported without complete inference statistics?")
@@ -252,7 +270,7 @@ def _main_result_claim(
         "gate_tier": status,
         "prose_template": prose_template,
         "numeric_slots": sorted([key for key in slots if key.endswith(claim_id)]),
-        "evidence_refs": [item["evidence_id"] for item in [coefficient, se, p_value, n_item] if item],
+        "evidence_refs": [item["evidence_id"] for item in [coefficient, se, p_value, t_stat, n_item] if item],
         "citation_refs": [],
         "gate_reasons": flags,
         "suggested_rewrite": prose_template if status == "safe" else "Add missing diagnostics or author confirmation before using stronger result language.",
@@ -262,7 +280,67 @@ def _main_result_claim(
             "artifact_id": context["artifact_id"],
             "model_id": context["model_id"],
             "variable": variable,
+            "magnitude_variable": magnitude_variable if magnitude_ready else None,
         },
+    }
+
+
+def _magnitude_variable_for_claim(variable: str, ledger: dict[str, Any], intake_profile: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    semantics_by_variable = ledger.get("variable_semantics") or {}
+    if not isinstance(semantics_by_variable, dict):
+        return variable, {}
+    direct = semantics_by_variable.get(variable)
+    if isinstance(direct, dict):
+        return variable, direct
+    if not _is_effect_term(variable):
+        return variable, {}
+    outcome_candidates = _outcome_variables_from_intake(intake_profile)
+    ready_outcomes = [
+        name
+        for name in outcome_candidates
+        if isinstance(semantics_by_variable.get(name), dict) and _magnitude_ready(semantics_by_variable[name])
+    ]
+    if len(ready_outcomes) == 1:
+        selected = ready_outcomes[0]
+        return selected, semantics_by_variable[selected]
+    ready_semantics = [
+        (str(name), semantics)
+        for name, semantics in semantics_by_variable.items()
+        if isinstance(semantics, dict) and _magnitude_ready(semantics)
+    ]
+    if len(ready_semantics) == 1:
+        return ready_semantics[0]
+    return variable, {}
+
+
+def _outcome_variables_from_intake(intake_profile: dict[str, Any]) -> list[str]:
+    variables: list[str] = []
+    registry = intake_profile.get("variable_registry", []) if isinstance(intake_profile, dict) else []
+    for entry in registry if isinstance(registry, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        role = str(entry.get("role") or "").lower()
+        name = str(entry.get("name") or entry.get("variable") or "").strip()
+        if name and "outcome" in role:
+            variables.append(name)
+    context = intake_profile.get("outcome_magnitude_context", []) if isinstance(intake_profile, dict) else []
+    for entry in context if isinstance(context, list) else []:
+        if isinstance(entry, dict):
+            name = str(entry.get("variable") or "").strip()
+            if name:
+                variables.append(name)
+    return sorted(set(variables))
+
+
+def _is_effect_term(variable: str) -> bool:
+    lowered = variable.lower()
+    return bool(re.fullmatch(r"event_(?:m)?\d+", lowered)) or lowered in {
+        "_did_treat_post",
+        "did_treat_post",
+        "treat_post",
+        "post_treat",
+        "att",
+        "main_effect",
     }
 
 
@@ -283,6 +361,12 @@ def _label_for_variable(variable: str, intake_profile: dict[str, Any]) -> str:
     for entry in intake_profile.get("outcome_magnitude_context", []) if isinstance(intake_profile, dict) else []:
         if isinstance(entry, dict) and entry.get("variable") == variable and entry.get("label"):
             return str(entry["label"])
+    if re.fullmatch(r"event_(?:m)?\d+", variable):
+        if variable.startswith("event_m"):
+            return "a pre-treatment event-study coefficient"
+        if variable == "event_0":
+            return "the treatment-period event-study coefficient"
+        return "a post-treatment event-study coefficient"
     return re.sub(r"\s+", " ", variable.replace("_", " ")).strip()
 
 
@@ -309,6 +393,10 @@ def _author_asserted_claims(intake_profile: dict[str, Any]) -> list[dict[str, An
         claim_text = str(item.get("claim") or "").strip()
         if not claim_text:
             continue
+        assertion_type = str(item.get("assertion_type") or item.get("claim_type") or item.get("role") or "").strip()
+        gate_reasons = ["author_asserted_from_intake"]
+        if assertion_type:
+            gate_reasons.append(f"author_asserted_{_slug(assertion_type)}")
         claims.append(
             {
                 "claim_id": item.get("claim_id") or f"author_asserted_{idx:03d}",
@@ -319,7 +407,7 @@ def _author_asserted_claims(intake_profile: dict[str, Any]) -> list[dict[str, An
                 "numeric_slots": [],
                 "evidence_refs": [],
                 "citation_refs": [],
-                "gate_reasons": ["author_asserted_from_intake"],
+                "gate_reasons": gate_reasons,
                 "suggested_rewrite": claim_text,
                 "reviewer_questions": [],
                 "author_override": {
@@ -327,10 +415,17 @@ def _author_asserted_claims(intake_profile: dict[str, Any]) -> list[dict[str, An
                     "original_status": item.get("original_status") or "author_supplied_without_gate",
                     "reason": item.get("author_reason") or "",
                 },
-                "metadata": {"source": "intake_profile"},
+                "metadata": {
+                    "source": "intake_profile",
+                    "assertion_type": assertion_type or None,
+                },
             }
         )
     return claims
+
+
+def _slug(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_") or "claim"
 
 
 def _validate_claim_templates(claims: list[dict[str, Any]], result: ClaimLedgerBuildResult) -> None:
@@ -399,7 +494,7 @@ def _author_report_text(result: ClaimLedgerBuildResult) -> str:
         "## Safe Claims",
         "",
     ]
-    lines.extend([f"- `{claim['claim_id']}` {claim['prose_template']}" for claim in safe] if safe else ["- None."])
+    lines.extend([f"- {_claim_report_line(claim)}" for claim in safe] if safe else ["- None."])
     lines.extend(["", "## Flagged And Downgraded Claims", ""])
     lines.extend([f"- `{claim['claim_id']}` reasons: {', '.join(claim.get('gate_reasons', []))}" for claim in flagged] if flagged else ["- None."])
     lines.extend(["", "## Author-Asserted Claims", ""])
@@ -421,3 +516,19 @@ def _author_report_text(result: ClaimLedgerBuildResult) -> str:
     else:
         lines.append("- Continue to section writers.")
     return "\n".join(lines) + "\n"
+
+
+def _claim_report_line(claim: dict[str, Any]) -> str:
+    metadata = claim.get("metadata") if isinstance(claim.get("metadata"), dict) else {}
+    variable = metadata.get("variable") or "unspecified variable"
+    magnitude_variable = metadata.get("magnitude_variable")
+    refs = claim.get("evidence_refs") if isinstance(claim.get("evidence_refs"), list) else []
+    pieces = [
+        f"`{claim.get('claim_id')}`",
+        "ready for verified prose",
+        f"variable: `{variable}`",
+        f"evidence refs: `{len(refs)}`",
+    ]
+    if magnitude_variable:
+        pieces.append(f"magnitude variable: `{magnitude_variable}`")
+    return "; ".join(pieces) + "."

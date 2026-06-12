@@ -25,13 +25,23 @@ def _complete_answers() -> dict:
             "estimand": "ATT for treated firms around staggered policy adoption",
             "unit_of_observation": "firm-year",
             "sample_scope": "US public firms, 2005-2020",
+            "estimator": "TWFE event-study benchmark with modern DID comparison",
+            "fixed_effects": ["firm", "year"],
+            "cluster_statement": "cluster standard errors at the firm level",
         },
         "treatment_timing": {
             "treatment_name": "Policy adoption",
+            "treatment_variable": "policy_adopted",
             "timing_type": "staggered",
             "anticipation_window": "two years before adoption",
             "event_time_unit": "year",
         },
+        "variable_registry": [
+            {"name": "investment_rate", "role": "outcome", "source": "author"},
+            {"name": "policy_adopted", "role": "treatment", "source": "author"},
+            {"name": "firm_id", "role": "unit_id fixed_effect cluster", "source": "author"},
+            {"name": "year", "role": "time fixed_effect", "source": "author"},
+        ],
         "institutional_context": [
             {
                 "fact": "Policy adoption occurred at different times across states.",
@@ -62,7 +72,9 @@ def test_complete_intake_profile_preserves_author_sources(tmp_path: Path) -> Non
     assert profile["author_declared_design"]["design_type"] == "staggered_did"
     assert profile["missing_author_inputs"] == []
     assert profile["llm_suggested_prose"] == []
+    assert profile["variable_registry"][0]["role"] == "outcome"
     assert profile["field_sources"]["institutional_context"] == "author_provided"
+    assert profile["field_sources"]["variable_registry"] == "author_provided"
 
 
 def test_missing_fields_use_author_input_needed_without_invention(tmp_path: Path) -> None:
@@ -137,6 +149,7 @@ def test_author_asserted_claims_keep_original_status_and_reason(tmp_path: Path) 
     answers["author_asserted_claims"] = [
         {
             "claim": "This policy changed firm investment through credit-supply channels.",
+            "assertion_type": "mechanism",
             "original_status": "flag_and_confirm",
             "reason": "Author will provide institutional notes.",
         }
@@ -145,6 +158,7 @@ def test_author_asserted_claims_keep_original_status_and_reason(tmp_path: Path) 
     claim = result.intake_profile["author_asserted_claims"][0]
     assert claim["original_status"] == "flag_and_confirm"
     assert claim["author_reason"] == "Author will provide institutional notes."
+    assert claim["assertion_type"] == "mechanism"
 
 
 def test_missing_note_file_is_a_hard_block(tmp_path: Path) -> None:

@@ -228,11 +228,11 @@ def _write_author_report(pack_dir: Path, result: CompileResult) -> None:
         "## Compile Status",
         "",
         f"- Status: `{result.status}`",
-        f"- main.md: `{result.main_md}`",
-        f"- main.tex: `{result.main_tex}`",
+        "- main.md: available.",
+        "- main.tex: available.",
     ]
     if result.main_pdf:
-        lines.append(f"- main.pdf: `{result.main_pdf}`")
+        lines.append("- main.pdf: produced.")
     else:
         lines.append("- main.pdf: not produced; markdown fallback is available.")
     if result.issues:

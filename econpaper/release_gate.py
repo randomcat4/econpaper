@@ -7,6 +7,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from .tiering import evaluate_pack_tier
+
 
 RELEASE_GATE_VERSION = "v3.0"
 PLACEHOLDER_RE = re.compile(r"\{\{[^}]+\}\}")
@@ -74,6 +76,7 @@ def run_release_gate(*, pack_dir: str | Path, human_eval_path: str | Path | None
     _check_claim_ledger(pack, result)
     _check_global_coherence(pack, result)
     _check_sections(pack, result)
+    _check_tier_metrics(pack, result)
     _check_run_validation(pack, result)
     _check_human_eval(Path(human_eval_path) if human_eval_path else None, result)
     result.status = "failed" if result.has_hard_blocks else "passed"
@@ -150,6 +153,52 @@ def _check_sections(pack: Path, result: ReleaseGateResult) -> None:
             "hard_block",
             "Main Results must include economic magnitude interpretation or explicit author-input-needed magnitude gap.",
             path=str(results_path),
+        )
+
+
+def _check_tier_metrics(pack: Path, result: ReleaseGateResult) -> None:
+    path = pack / "reports" / "internal" / "metrics.json"
+    if not path.exists():
+        result.add_finding(
+            "tier_metrics_missing",
+            "hard_block",
+            "Release requires reports/internal/metrics.json proving the pack reached Tier A.",
+            path=str(path),
+        )
+        return
+    payload = _load_json(path, result, "metrics")
+    metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else payload
+    reported_tier = str(payload.get("draft_tier") or metrics.get("draft_tier") or "").strip()
+    computed = evaluate_pack_tier(pack)
+    computed_tier = computed.draft_tier
+    result.metrics["draft_tier"] = computed_tier
+    result.metrics["reported_draft_tier"] = reported_tier or None
+    if reported_tier and reported_tier != computed_tier:
+        result.add_finding(
+            "tier_metrics_stale_or_tampered",
+            "hard_block",
+            "Stored tier metrics do not match the current pack contents.",
+            path=str(path),
+            details={"reported_draft_tier": reported_tier, "computed_draft_tier": computed_tier},
+        )
+    if computed_tier != "A":
+        result.add_finding(
+            "draft_tier_below_release_target",
+            "hard_block",
+            "Release requires a Tier A pack before human evaluation can clear it.",
+            path=str(path),
+            details={"draft_tier": computed_tier, "tier_a_blockers": computed.metrics.get("tier_a_blockers", [])},
+        )
+    provenance = computed.metrics.get("provenance", {})
+    data_provenance = provenance.get("data_provenance")
+    result.metrics["data_provenance"] = data_provenance
+    if data_provenance != "author_supplied":
+        result.add_finding(
+            "data_provenance_not_author_supplied",
+            "hard_block",
+            "Release requires data_provenance=author_supplied; synthetic, unknown, or missing provenance cannot release.",
+            path=str(path),
+            details={"data_provenance": data_provenance},
         )
 
 

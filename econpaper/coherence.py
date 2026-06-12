@@ -249,7 +249,7 @@ def _author_report_text(result: CoherenceResult) -> str:
         "## Safe Claims",
         "",
     ]
-    lines.extend([f"- `{claim.get('claim_id')}` {claim.get('prose_template')}" for claim in safe_claims] if safe_claims else ["- None."])
+    lines.extend([f"- {_claim_report_line(claim)}" for claim in safe_claims] if safe_claims else ["- None."])
     lines.extend(["", "## Flagged And Downgraded Claims", ""])
     lines.extend([f"- `{claim.get('claim_id')}`: {', '.join(claim.get('gate_reasons', []))}" for claim in flagged_claims] if flagged_claims else ["- None."])
     lines.extend(["", "## Author-Asserted Claims", ""])
@@ -283,3 +283,19 @@ def _author_report_text(result: CoherenceResult) -> str:
         questions.extend(claim.get("reviewer_questions", []))
     lines.extend([f"- {question}" for question in questions] if questions else ["- None generated from current claim ledger."])
     return "\n".join(lines) + "\n"
+
+
+def _claim_report_line(claim: dict[str, Any]) -> str:
+    metadata = claim.get("metadata") if isinstance(claim.get("metadata"), dict) else {}
+    variable = metadata.get("variable") or "unspecified variable"
+    magnitude_variable = metadata.get("magnitude_variable")
+    refs = claim.get("evidence_refs") if isinstance(claim.get("evidence_refs"), list) else []
+    pieces = [
+        f"`{claim.get('claim_id')}`",
+        f"ready for verified prose",
+        f"variable: `{variable}`",
+        f"evidence refs: `{len(refs)}`",
+    ]
+    if magnitude_variable:
+        pieces.append(f"magnitude variable: `{magnitude_variable}`")
+    return "; ".join(pieces) + "."

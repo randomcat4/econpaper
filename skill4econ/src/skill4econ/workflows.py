@@ -30,7 +30,7 @@ from .contracts.data_contract import (
 from .contracts.estimator_registry import route_did_estimators, write_estimator_routing
 from .diagnostics.did_design import detect_did_design, write_did_design
 from .adapters.did_common import build_common_output, write_common_output
-from .python_wrappers import PYTHON_METHODS
+from .python_wrappers import PYTHON_METHODS, _ols_numpy
 from .reporting.did_comparison import build_did_estimator_comparison
 from .stata_wrappers import STATA_METHODS
 
@@ -72,6 +72,80 @@ def _float_or_none(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return None if math.isnan(result) else result
+
+
+def _configured_placebo_tests(spec: dict[str, Any]) -> list[dict[str, str]]:
+    raw = spec.get("placebo_tests") or spec.get("placebo_checks") or []
+    if isinstance(raw, (str, dict)):
+        raw = [raw]
+    rows: list[dict[str, str]] = []
+    if not isinstance(raw, list):
+        return rows
+    for index, item in enumerate(raw, 1):
+        if isinstance(item, str):
+            post_col = item.strip()
+            name = post_col
+            treat_col = "_s4e_treat"
+        elif isinstance(item, dict):
+            post_col = str(
+                item.get("post")
+                or item.get("post_column")
+                or item.get("placebo_post")
+                or item.get("placebo_post_column")
+                or ""
+            ).strip()
+            treat_col = str(item.get("treat") or item.get("treat_column") or "_s4e_treat").strip()
+            name = str(item.get("name") or item.get("label") or post_col or f"placebo_{index}").strip()
+        else:
+            continue
+        rows.append(
+            {
+                "name": name or f"placebo_{index}",
+                "post_col": post_col,
+                "treat_col": treat_col or "_s4e_treat",
+            }
+        )
+    return rows
+
+
+def _configured_heterogeneity_dimensions(spec: dict[str, Any]) -> list[str]:
+    raw = spec.get("heterogeneity_dimensions") or spec.get("heterogeneity_groups") or []
+    if not raw and isinstance(spec.get("heterogeneity"), dict):
+        raw = spec["heterogeneity"].get("dimensions") or spec["heterogeneity"].get("groups") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    dimensions: list[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            column = item.strip()
+        elif isinstance(item, dict):
+            column = str(item.get("dimension") or item.get("column") or item.get("name") or "").strip()
+        else:
+            column = ""
+        if column and column not in dimensions:
+            dimensions.append(column)
+    return dimensions
+
+
+def _variable_units(spec: dict[str, Any], y: str) -> dict[str, str]:
+    raw = spec.get("variable_units") or spec.get("units") or {}
+    units: dict[str, str] = {}
+    if isinstance(raw, dict):
+        units.update({str(key): str(value) for key, value in raw.items() if value is not None})
+    elif isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            variable = str(item.get("variable") or item.get("name") or "").strip()
+            unit = str(item.get("unit") or item.get("units") or "").strip()
+            if variable and unit:
+                units[variable] = unit
+    outcome_unit = str(spec.get("outcome_unit") or spec.get("y_unit") or "").strip()
+    if y and outcome_unit:
+        units.setdefault(y, outcome_unit)
+    return units
 
 
 def _warning(severity: str, code: str, message: str, *, action: str = "") -> dict[str, Any]:
@@ -206,6 +280,8 @@ def _prepare_did_inputs(ctx: RunContext) -> dict[str, Any]:
     y = str(spec.get("y") or "")
     controls = listify(spec.get("controls") or spec.get("x") or spec.get("covars"))
     cluster = str(spec.get("cluster") or id_col or "")
+    configured_placebos = _configured_placebo_tests(spec)
+    configured_heterogeneity = _configured_heterogeneity_dimensions(spec)
     engine_policy = _normalize_policy(spec)
     window_raw = spec.get("event_window", spec.get("window", [-5, 5]))
     if not isinstance(window_raw, list | tuple) or len(window_raw) != 2:
@@ -248,6 +324,40 @@ def _prepare_did_inputs(ctx: RunContext) -> dict[str, Any]:
         for name in {col for col in required_columns if col}
         if name not in df.columns
     ]
+    diagnostic_columns: list[str] = []
+    for placebo in configured_placebos:
+        post_name = placebo.get("post_col", "")
+        treat_name = placebo.get("treat_col", "")
+        if not post_name:
+            warnings.append(
+                _warning(
+                    "yellow",
+                    "placebo_test_missing_post_column",
+                    f"Configured placebo test `{placebo.get('name')}` does not declare a placebo post column.",
+                    action="Add post/post_column to the placebo_tests entry.",
+                )
+            )
+        else:
+            diagnostic_columns.append(post_name)
+        if treat_name and not treat_name.startswith("_s4e_"):
+            diagnostic_columns.append(treat_name)
+    diagnostic_columns.extend(configured_heterogeneity)
+    missing_diagnostic_columns = sorted(
+        {
+            col
+            for col in diagnostic_columns
+            if col and col not in df.columns
+        }
+    )
+    if missing_diagnostic_columns:
+        warnings.append(
+            _warning(
+                "yellow",
+                "configured_diagnostic_columns_missing",
+                f"Configured optional DID diagnostic columns are missing: {missing_diagnostic_columns}.",
+                action="Fix these columns to generate placebo/heterogeneity artifacts; the main DID run is unchanged.",
+            )
+        )
     if not id_col or not time_col or not y:
         warnings.append(
             _warning(
@@ -274,6 +384,8 @@ def _prepare_did_inputs(ctx: RunContext) -> dict[str, Any]:
         "columns": list(map(str, df.columns)),
         "design_type": design_type,
         "engine_policy": engine_policy,
+        "configured_placebo_tests": configured_placebos,
+        "configured_heterogeneity_dimensions": configured_heterogeneity,
     }
     contract_payload = _load_optional_data_contract_payload(ctx)
     did_design = detect_did_design(df, spec, contract_payload)
@@ -602,6 +714,17 @@ def _prepare_did_inputs(ctx: RunContext) -> dict[str, Any]:
     analysis_path = ctx.artifact("analysis_data.csv")
     analysis.to_csv(analysis_path, index=False, encoding="utf-8-sig")
     data_summary["analysis_data"] = str(analysis_path)
+    summary_path = _write_summary_stats(
+        ctx,
+        analysis,
+        [y, "_s4e_treat", "_s4e_post", *controls],
+        variable_units=_variable_units(spec, y),
+    )
+    cohort_path = _write_cohort_table(ctx, did_design, analysis, id_col=id_col)
+    if summary_path:
+        data_summary["summary_stats"] = summary_path
+    if cohort_path:
+        data_summary["cohort_table"] = cohort_path
     _write_preflight_artifacts(
         ctx,
         data_summary,
@@ -628,6 +751,8 @@ def _prepare_did_inputs(ctx: RunContext) -> dict[str, Any]:
         "cluster": cluster,
         "event_window": event_window,
         "base_period": base_period,
+        "configured_placebo_tests": configured_placebos,
+        "configured_heterogeneity_dimensions": configured_heterogeneity,
     }
 
 
@@ -781,12 +906,20 @@ def _routed_did_step_spec(ctx: RunContext, prepared: dict[str, Any], selected: d
     return dict(ctx.spec)
 
 
-def _collect_model_tables(ctx: RunContext, step_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _collect_model_tables(
+    ctx: RunContext,
+    step_results: list[dict[str, Any]],
+    *,
+    prepared: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     combined: list[dict[str, Any]] = []
+    prepared = prepared or {}
+    cluster_count = (prepared.get("data_summary") or {}).get("cluster_count")
     for step in step_results:
         child_run_dir = Path(step["run_dir"])
         child_model_table = child_run_dir / "model_table.csv"
         table = _read_csv(child_model_table)
+        manifest = step.get("manifest", {}) if isinstance(step.get("manifest"), dict) else {}
         if not table:
             combined.append(
                 {
@@ -796,12 +929,23 @@ def _collect_model_tables(ctx: RunContext, step_results: list[dict[str, Any]]) -
                     "source_run_dir": str(child_run_dir),
                     "source_model_table": str(child_model_table),
                     "term": "",
-                    "note": step.get("manifest", {}).get("error", ""),
+                    "note": manifest.get("error", ""),
                 }
             )
             continue
         for row in table:
             row = dict(row)
+            coef = _float_or_none(row.get("coef") or row.get("estimate") or row.get("coefficient"))
+            se = _float_or_none(row.get("std_error") or row.get("se") or row.get("standard_error"))
+            if coef is not None and se is not None:
+                row.setdefault("ci_low", coef - 1.96 * se)
+                row.setdefault("ci_high", coef + 1.96 * se)
+            if not row.get("n_obs"):
+                n_obs = manifest.get("nobs") or manifest.get("n_obs") or manifest.get("n")
+                if n_obs is not None:
+                    row["n_obs"] = n_obs
+            if not row.get("n_clusters") and cluster_count is not None:
+                row["n_clusters"] = cluster_count
             row["model"] = step.get("method")
             row["engine"] = step.get("engine")
             row["status"] = step.get("status")
@@ -810,6 +954,469 @@ def _collect_model_tables(ctx: RunContext, step_results: list[dict[str, Any]]) -
             combined.append(row)
     _write_csv(ctx.artifact("model_table.csv"), combined)
     return combined
+
+
+def _write_summary_stats(
+    ctx: RunContext,
+    frame: Any,
+    variables: list[str],
+    *,
+    variable_units: dict[str, str] | None = None,
+) -> str | None:
+    import pandas as pd
+
+    variable_units = variable_units or {}
+    rows: list[dict[str, Any]] = []
+    for variable in dict.fromkeys([item for item in variables if item]):
+        if variable not in frame.columns:
+            continue
+        series = pd.to_numeric(frame[variable], errors="coerce").dropna()
+        if series.empty:
+            continue
+        rows.append(
+            {
+                "variable": variable,
+                "n": int(series.shape[0]),
+                "mean": float(series.mean()),
+                "sd": float(series.std(ddof=1)) if series.shape[0] > 1 else 0.0,
+                "min": float(series.min()),
+                "max": float(series.max()),
+                "unit": variable_units.get(variable, ""),
+                "source": "analysis_data.csv",
+            }
+        )
+    if not rows:
+        return None
+    path = ctx.artifact("summary_stats.csv")
+    _write_csv(path, rows)
+    return str(path)
+
+
+def _write_cohort_table(
+    ctx: RunContext,
+    did_design: dict[str, Any],
+    frame: Any | None = None,
+    *,
+    id_col: str = "",
+) -> str | None:
+    first_treat_years = did_design.get("first_treat_years") or []
+    min_pre = did_design.get("min_pre_periods_by_cohort") or {}
+    min_post = did_design.get("min_post_periods_by_cohort") or {}
+    n_units_by_cohort: dict[str, int] = {}
+    if frame is not None and id_col and id_col in frame.columns and "_s4e_gvar" in frame.columns:
+        try:
+            import pandas as pd
+
+            cohort_frame = frame[[id_col, "_s4e_gvar"]].dropna().copy()
+            cohort_frame["_s4e_gvar"] = pd.to_numeric(cohort_frame["_s4e_gvar"], errors="coerce")
+            treated = cohort_frame[cohort_frame["_s4e_gvar"] > 0]
+            counts = treated.drop_duplicates([id_col, "_s4e_gvar"]).groupby("_s4e_gvar")[id_col].nunique()
+            n_units_by_cohort = {str(int(cohort)): int(count) for cohort, count in counts.items()}
+        except Exception:
+            n_units_by_cohort = {}
+    if not n_units_by_cohort and len(first_treat_years) == 1 and did_design.get("n_treated_units") is not None:
+        n_units_by_cohort[str(first_treat_years[0])] = int(did_design.get("n_treated_units") or 0)
+    rows: list[dict[str, Any]] = []
+    for cohort in first_treat_years if isinstance(first_treat_years, list) else []:
+        key = str(cohort)
+        rows.append(
+            {
+                "cohort": key,
+                "first_treat_period": cohort,
+                "n_units": n_units_by_cohort.get(key),
+                "min_pre_periods": min_pre.get(key),
+                "min_post_periods": min_post.get(key),
+                "source": "did_design.json",
+            }
+        )
+    if not rows:
+        return None
+    path = ctx.artifact("cohort_table.csv")
+    _write_csv(path, rows)
+    return str(path)
+
+
+def _write_event_study_table(ctx: RunContext, event_rows: list[dict[str, Any]]) -> str | None:
+    rows: list[dict[str, Any]] = []
+    for row in event_rows:
+        event_time = _parse_event_term(str(row.get("term", "")))
+        if event_time is None:
+            continue
+        coef = _float_or_none(row.get("coef"))
+        se = _float_or_none(row.get("std_error"))
+        p_value = _float_or_none(row.get("p_value"))
+        ci_low = _float_or_none(row.get("ci_low"))
+        ci_high = _float_or_none(row.get("ci_high"))
+        if coef is None:
+            continue
+        if (ci_low is None or ci_high is None) and se is not None:
+            ci_low = coef - 1.96 * se
+            ci_high = coef + 1.96 * se
+        rows.append(
+            {
+                "event_time": event_time,
+                "term": row.get("term"),
+                "estimate": coef,
+                "std_error": se,
+                "ci_low": ci_low,
+                "ci_high": ci_high,
+                "p_value": p_value,
+                "model": row.get("model"),
+                "engine": row.get("engine"),
+                "status": row.get("status"),
+                "source_model_table": row.get("source_model_table"),
+            }
+        )
+    if not rows:
+        return None
+    rows.sort(key=lambda item: int(item["event_time"]))
+    path = ctx.artifact("event_study.csv")
+    _write_csv(path, rows)
+    return str(path)
+
+
+def _write_pretrend_test(ctx: RunContext, event_rows: list[dict[str, Any]], base_period: int) -> str | None:
+    leads: list[dict[str, Any]] = []
+    for row in event_rows:
+        event_time = _parse_event_term(str(row.get("term", "")))
+        if event_time is None or event_time >= 0 or event_time == base_period:
+            continue
+        coef = _float_or_none(row.get("coef"))
+        se = _float_or_none(row.get("std_error"))
+        p_value = _float_or_none(row.get("p_value"))
+        if coef is None:
+            continue
+        leads.append(
+            {
+                "event_time": event_time,
+                "estimate": coef,
+                "std_error": se,
+                "p_value": p_value,
+                "source_model_table": row.get("source_model_table"),
+            }
+        )
+    if not leads:
+        return None
+    p_values = [item["p_value"] for item in leads if item.get("p_value") is not None]
+    payload = {
+        "version": "skill4econ.pretrend_test.v1",
+        "test_type": "event_study_lead_screen",
+        "formal_joint_test_available": False,
+        "base_period": base_period,
+        "lead_count": len(leads),
+        "lead_p_values_available": len(p_values),
+        "min_p_value": min(p_values) if p_values else None,
+        "any_lead_p_below_0_05": any(value < 0.05 for value in p_values),
+        "status": "computed_from_event_study_leads" if p_values else "lead_coefficients_without_p_values",
+        "caveat": "This is a machine pretrend diagnostic from event-study lead coefficients, not a joint Wald test.",
+        "leads": sorted(leads, key=lambda item: int(item["event_time"])),
+    }
+    path = ctx.artifact("pretrend_test.json")
+    write_json(path, payload)
+    return str(path)
+
+
+def _did_twfe_diagnostic(
+    frame: Any,
+    *,
+    y: str,
+    id_col: str,
+    time_col: str,
+    controls: list[str],
+    cluster: str,
+    treat_col: str,
+    post_col: str,
+) -> dict[str, Any]:
+    import pandas as pd
+
+    if not treat_col or not post_col:
+        return {"status": "skipped_missing_configuration", "error": "treat_col and post_col are required"}
+    required = [y, id_col, time_col, treat_col, post_col, *controls]
+    if cluster:
+        required.append(cluster)
+    missing = [col for col in dict.fromkeys(required) if col and col not in frame.columns]
+    if missing:
+        return {"status": "skipped_missing_columns", "error": f"missing columns: {missing}"}
+
+    columns = [col for col in dict.fromkeys(required) if col]
+    work = frame[columns].copy()
+    work["_diag_treat"] = pd.to_numeric(work[treat_col], errors="coerce")
+    work["_diag_post"] = pd.to_numeric(work[post_col], errors="coerce")
+    control_terms = [col for col in controls if col in work.columns]
+    for col in control_terms:
+        work[col] = pd.to_numeric(work[col], errors="coerce")
+    work = work.dropna(subset=[y, id_col, time_col, "_diag_treat", "_diag_post", *control_terms])
+    if len(work) < 4:
+        return {"status": "skipped_too_few_rows", "error": "fewer than four usable rows after dropna"}
+    if work["_diag_treat"].nunique(dropna=True) < 2:
+        return {"status": "skipped_no_treatment_variation", "error": "treatment column has no usable variation"}
+    if work["_diag_post"].nunique(dropna=True) < 2:
+        return {"status": "skipped_no_post_variation", "error": "post/placebo column has no usable variation"}
+
+    try:
+        work["_did_treat_post"] = work["_diag_treat"].astype(float) * work["_diag_post"].astype(float)
+        design = work[["_did_treat_post", *control_terms]].copy()
+        design = design.join(pd.get_dummies(work[id_col].astype(str), prefix=f"fe_{id_col}", drop_first=True).astype(float))
+        design = design.join(
+            pd.get_dummies(work[time_col].astype(str), prefix=f"fe_{time_col}", drop_first=True).astype(float)
+        )
+        design["_const"] = 1.0
+        design[y] = pd.to_numeric(work[y], errors="coerce").to_numpy()
+        cluster_arg = cluster if cluster and cluster in work.columns else None
+        if cluster_arg:
+            design[cluster_arg] = work[cluster_arg].to_numpy()
+        terms = [
+            "_const",
+            "_did_treat_post",
+            *[col for col in design.columns if col not in {y, cluster_arg, "_const", "_did_treat_post"}],
+        ]
+        rows, meta = _ols_numpy(design, y, terms, cluster=cluster_arg)
+        effect = next((row for row in rows if row.get("term") == "_did_treat_post"), None)
+        if not effect:
+            return {"status": "failed_no_effect_row", "error": "DID interaction row was not returned"}
+        estimate = _float_or_none(effect.get("coef"))
+        se = _float_or_none(effect.get("std_error"))
+        payload = {
+            "status": "computed",
+            "estimate": estimate,
+            "std_error": se,
+            "p_value": _float_or_none(effect.get("p_value")),
+            "t_stat": _float_or_none(effect.get("t_stat")),
+            "n_obs": meta.get("nobs"),
+            "n_clusters": int(work[cluster_arg].nunique(dropna=True)) if cluster_arg else None,
+            "cov_type": meta.get("cov_type"),
+        }
+        if estimate is not None and se is not None:
+            payload["ci_low"] = estimate - 1.96 * se
+            payload["ci_high"] = estimate + 1.96 * se
+        return payload
+    except Exception as exc:
+        return {"status": "failed", "error": str(exc), "error_type": exc.__class__.__name__}
+
+
+def _write_placebo_tests(ctx: RunContext, prepared: dict[str, Any]) -> tuple[str | None, list[dict[str, Any]], bool]:
+    configs = prepared.get("configured_placebo_tests") or []
+    if not configs:
+        return None, [], False
+    import pandas as pd
+
+    analysis_path = Path(str(prepared["analysis_data"]))
+    frame = pd.read_csv(analysis_path)
+    rows: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    for config in configs:
+        name = str(config.get("name") or config.get("post_col") or "placebo")
+        post_col = str(config.get("post_col") or "")
+        treat_col = str(config.get("treat_col") or "_s4e_treat")
+        diagnostic = _did_twfe_diagnostic(
+            frame,
+            y=str(prepared.get("y") or ""),
+            id_col=str(prepared.get("id") or ""),
+            time_col=str(prepared.get("time") or ""),
+            controls=list(prepared.get("controls") or []),
+            cluster=str(prepared.get("cluster") or ""),
+            treat_col=treat_col,
+            post_col=post_col,
+        )
+        row = {
+            "placebo": name,
+            "post_column": post_col,
+            "treat_column": treat_col,
+            "source": "analysis_data.csv",
+            "diagnostic_role": "author_configured_placebo_timing",
+            **diagnostic,
+        }
+        rows.append(row)
+        if diagnostic.get("status") != "computed":
+            warnings.append(
+                _warning(
+                    "yellow",
+                    "placebo_test_not_computed",
+                    f"Configured placebo test `{name}` did not produce a usable estimate: {diagnostic.get('error') or diagnostic.get('status')}.",
+                    action="Fix the configured placebo timing column before using placebo evidence.",
+                )
+            )
+    path = ctx.artifact("placebo_tests.csv")
+    _write_csv(path, rows)
+    return str(path), warnings, any(row.get("status") == "computed" for row in rows)
+
+
+def _write_heterogeneity(ctx: RunContext, prepared: dict[str, Any]) -> tuple[str | None, list[dict[str, Any]], bool]:
+    dimensions = list(prepared.get("configured_heterogeneity_dimensions") or [])
+    if not dimensions:
+        return None, [], False
+    import pandas as pd
+
+    analysis_path = Path(str(prepared["analysis_data"]))
+    frame = pd.read_csv(analysis_path)
+    rows: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    for dimension in dimensions:
+        if dimension not in frame.columns:
+            warnings.append(
+                _warning(
+                    "yellow",
+                    "heterogeneity_dimension_missing",
+                    f"Configured heterogeneity dimension `{dimension}` is missing from analysis_data.csv.",
+                    action="Add the dimension column to the input data or remove it from the spec.",
+                )
+            )
+            rows.append(
+                {
+                    "dimension": dimension,
+                    "group": "",
+                    "source": "analysis_data.csv",
+                    "diagnostic_role": "author_configured_subgroup_did",
+                    "status": "skipped_missing_dimension",
+                }
+            )
+            continue
+        for group_value, subset in frame.groupby(dimension, dropna=False):
+            diagnostic = _did_twfe_diagnostic(
+                subset,
+                y=str(prepared.get("y") or ""),
+                id_col=str(prepared.get("id") or ""),
+                time_col=str(prepared.get("time") or ""),
+                controls=list(prepared.get("controls") or []),
+                cluster=str(prepared.get("cluster") or ""),
+                treat_col="_s4e_treat",
+                post_col="_s4e_post",
+            )
+            rows.append(
+                {
+                    "dimension": dimension,
+                    "group": "" if pd.isna(group_value) else str(group_value),
+                    "source": "analysis_data.csv",
+                    "diagnostic_role": "author_configured_subgroup_did",
+                    **diagnostic,
+                }
+            )
+    computed_dimensions = {
+        str(row.get("dimension"))
+        for row in rows
+        if row.get("status") == "computed"
+    }
+    missing_dimensions = [dimension for dimension in dimensions if dimension not in computed_dimensions]
+    if missing_dimensions:
+        warnings.append(
+            _warning(
+                "yellow",
+                "heterogeneity_not_computed",
+                f"Configured heterogeneity dimensions without usable subgroup estimates: {missing_dimensions}.",
+                action="Check subgroup support and variation before using heterogeneity evidence.",
+            )
+        )
+    path = ctx.artifact("heterogeneity.csv")
+    _write_csv(path, rows)
+    return str(path), warnings, bool(computed_dimensions)
+
+
+def _write_robustness_grid(
+    ctx: RunContext,
+    *,
+    step_results: list[dict[str, Any]],
+    comparison_rows: list[dict[str, Any]],
+    prepared: dict[str, Any],
+    diagnostic_artifacts: dict[str, str | None] | None = None,
+) -> str | None:
+    rows: list[dict[str, Any]] = []
+    for row in comparison_rows:
+        if row.get("status") in {None, "", "skipped"}:
+            continue
+        rows.append(
+            {
+                "family": "estimator_comparison",
+                "check": row.get("estimator"),
+                "status": row.get("status"),
+                "estimate": row.get("estimate"),
+                "std_error": row.get("std_error"),
+                "p_value": row.get("p_value"),
+                "source_path": row.get("source_path"),
+            }
+        )
+    data_summary = prepared.get("data_summary") or {}
+    sample = prepared.get("sample_construction") or {}
+    if sample:
+        rows.append(
+            {
+                "family": "sample_construction",
+                "check": "did_listwise_deletion",
+                "status": "computed",
+                "estimate": sample.get("drop_ratio_did_listwise"),
+                "std_error": None,
+                "p_value": None,
+                "source_path": "sample_construction.json",
+            }
+        )
+    if data_summary:
+        rows.append(
+            {
+                "family": "cluster_diagnostic",
+                "check": "cluster_count",
+                "status": "computed",
+                "estimate": data_summary.get("cluster_count"),
+                "std_error": None,
+                "p_value": None,
+                "source_path": "data_summary.json",
+            }
+        )
+    for family, source_path in (diagnostic_artifacts or {}).items():
+        if not source_path:
+            continue
+        rows.append(
+            {
+                "family": family,
+                "check": "author_configured_diagnostic",
+                "status": "computed",
+                "estimate": None,
+                "std_error": None,
+                "p_value": None,
+                "source_path": source_path,
+            }
+        )
+    if not rows and step_results:
+        rows.extend(
+            {
+                "family": "estimator_status",
+                "check": step.get("label") or step.get("method"),
+                "status": step.get("status"),
+                "estimate": None,
+                "std_error": None,
+                "p_value": None,
+                "source_path": step.get("run_dir"),
+            }
+            for step in step_results
+        )
+    if not rows:
+        return None
+    path = ctx.artifact("robustness_grid.csv")
+    _write_csv(path, rows)
+    return str(path)
+
+
+def _write_figure_manifest(ctx: RunContext, figure_paths: list[str | None]) -> str | None:
+    rows = []
+    for path_text in figure_paths:
+        if not path_text:
+            continue
+        path = Path(path_text)
+        if path.exists():
+            try:
+                rel = path.resolve().relative_to(ctx.run_dir.resolve()).as_posix()
+            except ValueError:
+                rel = str(path)
+            rows.append({"path": rel, "kind": "figure", "exists": True})
+    if not rows:
+        return None
+    path = ctx.artifact("figures") / "manifest.yaml"
+    text = "\n".join(
+        [
+            "figures:",
+            *[f"  - path: {row['path']}\n    kind: {row['kind']}\n    exists: true" for row in rows],
+        ]
+    )
+    write_text(path, text + "\n")
+    return str(path)
 
 
 def _write_robustness_plan(ctx: RunContext, design_type: str) -> None:
@@ -1882,13 +2489,16 @@ def did_paper_run(ctx: RunContext) -> WorkflowResult:
                 )
             )
 
-    combined = _collect_model_tables(ctx, step_results)
+    combined = _collect_model_tables(ctx, step_results, prepared=prepared)
     event_rows = [
         row
         for row in combined
         if row.get("model") == "did_event_study" and _parse_event_term(str(row.get("term", ""))) is not None
     ]
+    event_study_path = _write_event_study_table(ctx, event_rows)
+    pretrend_path = _write_pretrend_test(ctx, event_rows, int(prepared.get("base_period") or -1))
     figure = _write_event_plot(ctx, event_rows)
+    figure_manifest = _write_figure_manifest(ctx, [figure])
     event_requested = any(item.get("estimator") == "event_study_twfe" for item in routing.get("selected_estimators") or [])
     if event_requested and not figure:
         warnings.append(
@@ -1912,7 +2522,21 @@ def did_paper_run(ctx: RunContext) -> WorkflowResult:
         did_design=prepared.get("did_design") or {},
         spec=ctx.spec,
     )
+    placebo_path, placebo_warnings, placebo_computed = _write_placebo_tests(ctx, prepared)
+    heterogeneity_path, heterogeneity_warnings, heterogeneity_computed = _write_heterogeneity(ctx, prepared)
+    robustness_grid = _write_robustness_grid(
+        ctx,
+        step_results=step_results,
+        comparison_rows=comparison_rows,
+        prepared=prepared,
+        diagnostic_artifacts={
+            "placebo_timing": placebo_path if placebo_computed else None,
+            "subgroup_heterogeneity": heterogeneity_path if heterogeneity_computed else None,
+        },
+    )
     warnings.extend(comparison_warnings)
+    warnings.extend(placebo_warnings)
+    warnings.extend(heterogeneity_warnings)
 
     critical_failed = any(step.get("critical") and not _step_status_ok(step) for step in step_results)
     optional_failed = any((not step.get("critical")) and not _step_status_ok(step) for step in step_results)
@@ -1966,6 +2590,14 @@ def did_paper_run(ctx: RunContext) -> WorkflowResult:
         data_sha256=prepared.get("data_summary", {}).get("data_sha256"),
         warnings=warnings,
         steps=step_results,
+        evidence_artifacts={
+            "event_study": event_study_path,
+            "pretrend_test": pretrend_path,
+            "robustness_grid": robustness_grid,
+            "figure_manifest": figure_manifest,
+            "placebo_tests": placebo_path,
+            "heterogeneity": heterogeneity_path,
+        },
     )
 
 

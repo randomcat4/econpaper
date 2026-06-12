@@ -67,6 +67,7 @@ class RunValidationReport:
     status: str = "passed"
     run_status: str | None = None
     method_or_workflow: str | None = None
+    data_provenance: str | None = None
     automatic_claims_allowed: bool = False
     automatic_results_allowed: bool = False
     mock_watermark_required: bool = False
@@ -84,6 +85,7 @@ class RunValidationReport:
             "run_dir": str(self.run_dir),
             "run_status": self.run_status,
             "method_or_workflow": self.method_or_workflow,
+            "data_provenance": self.data_provenance,
             "automatic_claims_allowed": self.automatic_claims_allowed,
             "automatic_results_allowed": self.automatic_results_allowed,
             "mock_watermark_required": self.mock_watermark_required,
@@ -170,6 +172,7 @@ def validate_run_dir(run_dir: str | Path, *, known_methods: set[str] | None = No
     manifest = _optional_json(run_path / "manifest.json", report)
     run_config = _optional_json(run_path / "run_config_resolved.json", report)
     audit = _optional_json(run_path / "audit.json", report)
+    provenance = _optional_provenance(run_path / "provenance.yaml")
 
     run_status = str(status.get("status") or manifest.get("status") or "").strip().lower()
     method = str(
@@ -183,6 +186,7 @@ def validate_run_dir(run_dir: str | Path, *, known_methods: set[str] | None = No
     ).strip()
     report.run_status = run_status or None
     report.method_or_workflow = method or None
+    report.data_provenance = provenance.get("data_provenance")
 
     if run_status not in KNOWN_NORMALIZED_STATUSES:
         report.add_issue(
@@ -285,6 +289,7 @@ def _author_report_text(report: RunValidationReport) -> str:
         "## Run Validation",
         "",
         f"- Status: `{report.status}`",
+        f"- Data provenance: `{report.data_provenance or 'unknown'}`",
         f"- Automatic verified claims allowed: `{str(report.automatic_claims_allowed).lower()}`",
         f"- Automatic Results writing allowed: `{str(report.automatic_results_allowed).lower()}`",
     ]
@@ -305,6 +310,36 @@ def _author_report_text(report: RunValidationReport) -> str:
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def _optional_provenance(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8-sig")
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return _load_simple_provenance(text)
+    try:
+        payload = yaml.safe_load(text) or {}
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {str(key): str(value) for key, value in payload.items() if key and value is not None}
+
+
+def _load_simple_provenance(text: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        cleaned = value.strip().strip("'\"")
+        if key.strip() and cleaned:
+            result[key.strip()] = cleaned
+    return result
 
 
 def write_run_validation(run_dir: str | Path, out_dir: str | Path) -> RunValidationReport:

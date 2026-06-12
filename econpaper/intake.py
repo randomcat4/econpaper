@@ -84,6 +84,7 @@ def build_intake_profile(
     project = _project(payload, field_sources, missing)
     design = _author_declared_design(payload, field_sources, missing)
     timing = _treatment_timing(payload, field_sources, missing)
+    variable_registry = _variable_registry(payload, field_sources, missing)
     institutional_context = _institutional_context(payload, field_sources, missing)
     contribution_statement = _string_field(
         payload,
@@ -115,6 +116,7 @@ def build_intake_profile(
         "project": project,
         "author_declared_design": design,
         "treatment_timing": timing,
+        "variable_registry": variable_registry,
         "institutional_context": institutional_context,
         "contribution_statement": contribution_statement,
         "research_motivation": research_motivation,
@@ -311,6 +313,33 @@ def _author_declared_design(payload: dict[str, Any], sources: dict[str, str], mi
             sources,
             missing,
         ),
+        "estimator": _nested_string(
+            payload,
+            design_payload,
+            ["estimator", "estimation_method", "model"],
+            "author_declared_design.estimator",
+            "estimator",
+            sources,
+            missing,
+        ),
+        "fixed_effects": _nested_list_or_string(
+            payload,
+            design_payload,
+            ["fixed_effects", "fe"],
+            "author_declared_design.fixed_effects",
+            "fixed effects statement",
+            sources,
+            missing,
+        ),
+        "cluster_statement": _nested_string(
+            payload,
+            design_payload,
+            ["cluster_statement", "cluster", "cluster_by", "clustering"],
+            "author_declared_design.cluster_statement",
+            "clustering statement",
+            sources,
+            missing,
+        ),
     }
 
 
@@ -351,7 +380,69 @@ def _treatment_timing(payload: dict[str, Any], sources: dict[str, str], missing:
             sources,
             missing,
         ),
+        "treatment_variable": _nested_optional_string(
+            timing_payload,
+            ["treatment_variable", "treatment_var", "exposure_variable", "shock_variable"],
+            "treatment_timing.treatment_variable",
+            "treatment variable",
+            sources,
+            missing,
+        ),
     }
+
+
+def _variable_registry(payload: dict[str, Any], sources: dict[str, str], missing: list[str]) -> list[dict[str, str]]:
+    raw = payload.get("variable_registry") or payload.get("variables_registry") or payload.get("variables")
+    if not raw:
+        missing.append("variable registry with roles for outcome, treatment, controls, fixed effects, and clustering variables")
+        sources["variable_registry"] = "author_input_needed"
+        return []
+    entries: list[Any]
+    if isinstance(raw, dict):
+        entries = []
+        for name, value in raw.items():
+            if isinstance(value, dict):
+                entry = dict(value)
+                entry.setdefault("name", name)
+                entries.append(entry)
+            else:
+                entries.append({"name": name, "role": value})
+    else:
+        entries = raw if isinstance(raw, list) else [raw]
+    normalized: list[dict[str, str]] = []
+    for idx, entry in enumerate(entries, start=1):
+        if isinstance(entry, str):
+            missing.append(f"variable registry row {idx}: role")
+            normalized.append({"name": entry, "role": _needed("variable role"), "source": "author_input_needed"})
+            continue
+        if not isinstance(entry, dict):
+            missing.append(f"variable registry row {idx}: name and role")
+            continue
+        name = str(entry.get("name") or entry.get("variable") or entry.get("var") or "").strip()
+        role_value = entry.get("role") or entry.get("semantic_role") or entry.get("roles")
+        if isinstance(role_value, list):
+            role = ",".join(str(item).strip() for item in role_value if str(item).strip())
+        else:
+            role = str(role_value or "").strip()
+        if not name:
+            missing.append(f"variable registry row {idx}: name")
+            name = _needed("variable name")
+        if not role:
+            missing.append(f"variable registry row {idx}: role")
+            role = _needed(f"role for {name}")
+        normalized.append(
+            {
+                "name": name,
+                "role": role,
+                "source": str(entry.get("source") or entry.get("provenance") or "author"),
+            }
+        )
+    if not normalized:
+        missing.append("variable registry with roles for outcome, treatment, controls, fixed effects, and clustering variables")
+        sources["variable_registry"] = "author_input_needed"
+        return []
+    sources["variable_registry"] = "author_provided"
+    return normalized
 
 
 def _institutional_context(payload: dict[str, Any], sources: dict[str, str], missing: list[str]) -> list[dict[str, str]]:
@@ -489,23 +580,26 @@ def _author_asserted_claims(payload: dict[str, Any], sources: dict[str, str]) ->
             claim = entry.strip()
             reason = ""
             original_status = "author_supplied_without_gate"
+            assertion_type = ""
         elif isinstance(entry, dict):
             claim = str(entry.get("claim") or entry.get("text") or "").strip()
             reason = str(entry.get("reason") or "").strip()
             original_status = str(entry.get("original_status") or "author_supplied_without_gate").strip()
+            assertion_type = str(entry.get("assertion_type") or entry.get("claim_type") or entry.get("role") or "").strip()
         else:
             continue
         if not claim:
             continue
-        claims.append(
-            {
-                "claim_id": f"author_asserted_{idx:03d}",
-                "claim": claim,
-                "original_status": original_status,
-                "author_reason": reason,
-                "source": "author",
-            }
-        )
+        item = {
+            "claim_id": f"author_asserted_{idx:03d}",
+            "claim": claim,
+            "original_status": original_status,
+            "author_reason": reason,
+            "source": "author",
+        }
+        if assertion_type:
+            item["assertion_type"] = assertion_type
+        claims.append(item)
     if claims:
         sources["author_asserted_claims"] = "author_provided"
     return claims
@@ -568,6 +662,39 @@ def _nested_optional_string(
     missing.append(missing_label)
     sources[field_name] = "author_input_needed"
     return None
+
+
+def _nested_list_or_string(
+    payload: dict[str, Any],
+    nested: dict[str, Any],
+    keys: list[str],
+    field_name: str,
+    missing_label: str,
+    sources: dict[str, str],
+    missing: list[str],
+) -> list[str]:
+    for key in keys:
+        value = nested.get(key)
+        parsed = _as_string_list(value)
+        if parsed:
+            sources[field_name] = "author_provided"
+            return parsed
+        root_value = payload.get(key)
+        parsed = _as_string_list(root_value)
+        if parsed:
+            sources[field_name] = "author_provided"
+            return parsed
+    missing.append(missing_label)
+    sources[field_name] = "author_input_needed"
+    return []
+
+
+def _as_string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
 
 
 def _first_dict(payload: dict[str, Any], keys: list[str]) -> dict[str, Any]:

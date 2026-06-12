@@ -203,6 +203,7 @@ def _cmd_write(args: argparse.Namespace) -> int:
         out_dir=args.out,
         latex_command=args.latex_command,
         model_table_paths=args.model_table,
+        mode=args.mode,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
@@ -429,6 +430,12 @@ def build_parser() -> argparse.ArgumentParser:
     write.add_argument("--venue", default="generic-field-journal")
     write.add_argument("--out", required=True, type=Path)
     write.add_argument("--latex-command", default="pdflatex")
+    write.add_argument(
+        "--mode",
+        choices=["draft", "strict"],
+        default="draft",
+        help="draft emits the highest reachable tier; strict fails unless the pack reaches Tier A.",
+    )
     write.add_argument(
         "--model-table",
         action="append",

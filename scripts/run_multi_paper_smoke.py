@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import re
@@ -65,17 +66,17 @@ CASES = [
         venue="aea",
         field="environmental economics",
         method="did_twfe_event",
-        design_type="staggered DID with event-study diagnostics",
+        design_type="DID with event-study diagnostics and never-treated comparison group",
         estimand="average treatment effect of carbon-market exposure on plant-level CO2 intensity",
         unit="plant-year",
         sample="manufacturing plants in regulated and neighboring provinces, 2010-2022",
         treatment="pilot carbon market coverage",
-        timing_type="staggered adoption",
+        timing_type="single adoption cohort with never-treated controls",
         anticipation_window="two years before market launch",
         event_time_unit="year",
         contribution="The paper quantifies how carbon-market exposure changes manufacturing emissions intensity while keeping treatment timing explicit.",
         motivation="Carbon markets are central to climate policy, but authors need a transparent bridge between estimated effects and economically interpretable emissions magnitudes.",
-        context="Pilot carbon markets were launched in waves across provinces, creating staggered exposure across similar manufacturing plants.",
+        context="Pilot carbon markets exposed a treated manufacturing cohort while never-treated plants provide the comparison group.",
         main_term="carbon_market_exposure",
         main_coef=-0.084,
         main_se=0.026,
@@ -228,6 +229,18 @@ def main() -> int:
         "portable_path_reference_cases": [
             item["case_id"] for item in summary["cases"] if item["static_checks"].get("portable_path_references")
         ],
+        "real_skill4econ_cases": [
+            item["case_id"] for item in summary["cases"] if (item.get("skill4econ") or {}).get("mode") == "real_skill4econ"
+        ],
+        "minimal_intake_failed_cases": [
+            item["case_id"] for item in summary["cases"] if item["static_checks"].get("minimal_intake_gate_status") == "failed"
+        ],
+        "did_tier_a_artifact_complete_cases": [
+            item["case_id"]
+            for item in summary["cases"]
+            if not item["static_checks"].get("did_tier_a_missing_artifacts")
+            and not item["static_checks"].get("did_tier_a_incomplete_artifacts")
+        ],
         "author_report_unrendered_claim_placeholder_cases": [
             item["case_id"]
             for item in summary["cases"]
@@ -251,13 +264,25 @@ def main() -> int:
 def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_timeout: int) -> dict[str, Any]:
     case_dir = root / case.case_id
     inputs_dir = case_dir / "inputs"
-    run_dir = inputs_dir / "skill4econ_run"
     pack_dir = case_dir / "manuscript_pack"
     gate_dir = case_dir / "release_gate"
     inputs_dir.mkdir(parents=True, exist_ok=True)
-    run_dir.mkdir(parents=True, exist_ok=True)
 
-    _write_case_inputs(case, run_dir, inputs_dir)
+    if case.case_id == "env_carbon_did_aea":
+        skill4econ_run = _run_env_carbon_skill4econ_case(case, inputs_dir)
+        run_dir = Path(str(skill4econ_run.get("run_dir") or inputs_dir / "skill4econ_run_missing"))
+        _write_case_intake_and_refs(case, inputs_dir)
+    else:
+        run_dir = inputs_dir / "skill4econ_run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        _write_synthetic_case_run(case, run_dir)
+        _write_case_intake_and_refs(case, inputs_dir)
+        skill4econ_run = {
+            "mode": "synthetic_fixture",
+            "status": "fixture",
+            "run_dir": str(run_dir),
+            "warning": "C/B monitoring fixture; not a real skill4econ estimator run.",
+        }
 
     write_cmd = [
         sys.executable,
@@ -274,6 +299,8 @@ def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_time
         case.venue,
         "--out",
         str(pack_dir),
+        "--latex-command",
+        "definitely_missing_pdflatex",
     ]
     write_result = _run_command(write_cmd, cwd=Path.cwd(), timeout=120)
 
@@ -303,7 +330,9 @@ def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_time
             "case_dir": str(case_dir),
             "pack_dir": str(pack_dir),
             "release_gate_dir": str(gate_dir),
+            "skill4econ_run_dir": str(run_dir),
         },
+        "skill4econ": skill4econ_run,
         "write": write_result,
         "release_gate": {
             **gate_result,
@@ -316,7 +345,7 @@ def _run_case(*, case: SmokeCase, root: Path, codex_path: str | None, codex_time
     }
 
 
-def _write_case_inputs(case: SmokeCase, run_dir: Path, inputs_dir: Path) -> None:
+def _write_synthetic_case_run(case: SmokeCase, run_dir: Path) -> None:
     status = {
         "status": "success",
         "agent_status": "claimable_success",
@@ -331,6 +360,7 @@ def _write_case_inputs(case: SmokeCase, run_dir: Path, inputs_dir: Path) -> None
     _write_json(run_dir / "audit.json", {"status": "success", "workflow": case.method})
     _write_json(run_dir / "run_config_resolved.json", {"spec": {"case_id": case.case_id, "topic": case.topic}})
     _write_json(run_dir / "validation_report.json", {"status": "passed", "errors": []})
+    (run_dir / "provenance.yaml").write_text("data_provenance: author_supplied\n", encoding="utf-8")
 
     rows = [
         {
@@ -371,6 +401,104 @@ def _write_case_inputs(case: SmokeCase, run_dir: Path, inputs_dir: Path) -> None
         },
     )
 
+
+def _run_env_carbon_skill4econ_case(case: SmokeCase, inputs_dir: Path) -> dict[str, Any]:
+    data_path = inputs_dir / "env_carbon_panel.csv"
+    spec_path = inputs_dir / "did_paper_run_spec.json"
+    runs_dir = inputs_dir / "skill4econ_runs"
+    rows: list[dict[str, Any]] = []
+    for plant in range(1, 41):
+        exposed = int(plant <= 20)
+        province_group = "pilot_core" if plant % 2 == 0 else "neighboring"
+        baseline_size_group = "large" if plant in {1, 2, 3, 4, 5, 6, 13, 14, 15, 16, 17, 18} else "small"
+        province_index = 0.03 * (plant % 5)
+        for year in range(2015, 2023):
+            post = int(year >= 2019)
+            placebo_post = int(year >= 2017)
+            effect = exposed * post * (-0.08 - 0.015 * (province_group == "pilot_core") - 0.01 * (baseline_size_group == "large"))
+            rows.append(
+                {
+                    "plant_id": plant,
+                    "year": year,
+                    "log_co2_intensity": 1.9
+                    + 0.015 * (year - 2015)
+                    + province_index
+                    + 0.01 * (plant % 3)
+                    + effect,
+                    "carbon_market_exposure": exposed,
+                    "post": post,
+                    "placebo_post": placebo_post,
+                    "province_group": province_group,
+                    "baseline_size_group": baseline_size_group,
+                }
+            )
+    _write_csv(data_path, rows)
+    spec = {
+        "data": str(data_path.resolve()),
+        "design_type": "simple_2x2_did",
+        "id": "plant_id",
+        "time": "year",
+        "y": "log_co2_intensity",
+        "treat": "carbon_market_exposure",
+        "post": "post",
+        "cluster": "plant_id",
+        "engine_policy": "python",
+        "event_window": [-3, 3],
+        "base_period": -1,
+        "placebo_tests": [{"name": "fake_2017_timing", "post": "placebo_post"}],
+        "heterogeneity_dimensions": ["province_group", "baseline_size_group"],
+        "variable_units": {"log_co2_intensity": case.unit_label},
+        "output_dir": str(runs_dir.resolve()),
+    }
+    _write_json(spec_path, spec)
+    command = [
+        sys.executable,
+        "-m",
+        "skill4econ.cli",
+        "validate-workflow",
+        "--name",
+        "did_paper_run",
+        "--spec",
+        str(spec_path),
+        "--output",
+        str(runs_dir.resolve()),
+        "--run",
+        "--strict",
+    ]
+    result = _run_command(command, cwd=Path.cwd(), timeout=120)
+    run_dir = _extract_run_dir_from_cli_stdout(result.get("stdout_tail") or "")
+    if run_dir:
+        provenance = Path(run_dir) / "provenance.yaml"
+        provenance.write_text("data_provenance: author_supplied\n", encoding="utf-8")
+    return {
+        "mode": "real_skill4econ",
+        "command": result.get("command"),
+        "returncode": result.get("returncode"),
+        "elapsed_sec": result.get("elapsed_sec"),
+        "run_dir": run_dir,
+        "stdout_tail": result.get("stdout_tail"),
+        "stderr_tail": result.get("stderr_tail"),
+    }
+
+
+def _write_case_intake_and_refs(case: SmokeCase, inputs_dir: Path) -> None:
+    outcome_variable = "log_co2_intensity" if case.case_id == "env_carbon_did_aea" else case.main_term
+    unit_id = "plant_id" if case.case_id == "env_carbon_did_aea" else "unit_id"
+    registry = [
+        {"name": outcome_variable, "role": "outcome", "source": "author"},
+        {"name": case.main_term, "role": "treatment exposure policy", "source": "author"},
+        {"name": unit_id, "role": "unit_id fixed_effect cluster", "source": "author"},
+        {"name": "year", "role": "time fixed_effect event_time", "source": "author"},
+    ]
+    deduped_registry: list[dict[str, str]] = []
+    seen_registry_names: set[str] = set()
+    for entry in registry:
+        name = entry["name"]
+        if name in seen_registry_names:
+            deduped_registry[0]["role"] = f"{deduped_registry[0]['role']} {entry['role']}"
+            continue
+        seen_registry_names.add(name)
+        deduped_registry.append(entry)
     intake = {
         "project": {"title_working": case.topic, "field": case.field, "target_venue": case.venue},
         "author_declared_design": {
@@ -379,26 +507,75 @@ def _write_case_inputs(case: SmokeCase, run_dir: Path, inputs_dir: Path) -> None
             "estimand": case.estimand,
             "unit_of_observation": case.unit,
             "sample_scope": case.sample,
+            "estimator": "DID event-study workflow with plant and year fixed effects",
+            "fixed_effects": ["plant", "year"],
+            "cluster_statement": "cluster standard errors at the plant level",
         },
         "treatment_timing": {
             "treatment_name": case.treatment,
+            "treatment_variable": case.main_term,
             "timing_type": case.timing_type,
             "anticipation_window": case.anticipation_window,
             "event_time_unit": case.event_time_unit,
         },
+        "variable_registry": deduped_registry,
         "institutional_context": [{"fact": case.context, "source": "author", "confidence": "author_provided"}],
         "contribution_statement": case.contribution,
         "research_motivation": case.motivation,
         "outcome_magnitude_context": [
             {
-                "variable": case.main_term,
+                "variable": outcome_variable,
                 "unit": case.unit_label,
                 "mean": case.mean,
                 "sd": case.sd,
                 "meaningful_benchmark": case.benchmark,
             }
         ],
+        "field_sources": {
+            "author_declared_design.design_type": "author_provided",
+            "author_declared_design.estimator": "author_provided",
+            "author_declared_design.fixed_effects": "author_provided",
+            "author_declared_design.cluster_statement": "author_provided",
+            "variable_registry": "author_provided",
+            "institutional_context": "author_provided",
+            "contribution_statement": "author_provided",
+            "research_motivation": "author_provided",
+            "outcome_magnitude_context": "author_provided",
+        },
     }
+    if case.case_id == "env_carbon_did_aea":
+        literature_notes_text = (
+            "- martin2016: Author note: studies regulated-firm responses to emissions trading exposure and "
+            "is used only to position the carbon-market setting, not to create a new empirical result.\n"
+            "- calonico2014: Author note: provides inference background for regression-discontinuity designs; "
+            "it is retained in the smoke bibliography as non-DID comparison material and should not be used "
+            "as a DID positioning claim.\n"
+        )
+        literature_notes_path = inputs_dir / "literature_notes.md"
+        literature_notes_path.write_text(literature_notes_text, encoding="utf-8")
+        intake["author_provided_notes"] = {
+            "literature_notes": {
+                "path": str(literature_notes_path.resolve()),
+                "status": "author_provided",
+                "character_count": len(literature_notes_text),
+                "sha256": hashlib.sha256(literature_notes_text.encode("utf-8")).hexdigest(),
+            },
+            "section_notes": _env_carbon_section_notes(),
+        }
+        intake["author_asserted_claims"] = [
+            {
+                "claim_id": "author_asserted_mechanism_001",
+                "claim": (
+                    "The author asserts that carbon-market exposure affects emissions intensity through "
+                    "compliance-driven process upgrades and fuel-substitution incentives."
+                ),
+                "assertion_type": "mechanism",
+                "original_status": "flag_and_confirm",
+                "author_reason": "Mechanism statement is author-labeled and awaits separate mechanism diagnostics.",
+            }
+        ]
+        intake["field_sources"]["author_provided_notes.literature_notes"] = "author_provided"
+        intake["field_sources"]["author_asserted_claims"] = "author_provided"
     _write_json(inputs_dir / "intake_profile.json", intake)
     refs = []
     for item in case.refs:
@@ -415,6 +592,180 @@ def _write_case_inputs(case: SmokeCase, run_dir: Path, inputs_dir: Path) -> None
             + "}\n"
         )
     (inputs_dir / "refs.bib").write_text("\n".join(refs), encoding="utf-8")
+
+
+def _env_carbon_section_notes() -> list[dict[str, Any]]:
+    return [
+        {
+            "section": "01_introduction.md",
+            "note_id": "env_intro_policy_context_001",
+            "status": "author_provided",
+            "title": "Policy Context And Reader Stakes",
+            "paragraphs": [
+                (
+                    "Author note: the opening should treat carbon-market exposure as a concrete regulatory shock rather than as a generic environmental policy label. The reader should understand that the paper is about manufacturing plants facing a priced emissions constraint, with never-treated plants serving as the comparison group in the current vertical slice. The motivation is not that carbon markets are universally effective or ineffective; it is that plant-level emissions intensity gives a disciplined way to ask whether exposure is associated with operational changes inside regulated manufacturing. The introduction should therefore move from the policy object, to the measurement object, to the design object. It should not begin with sweeping claims about climate policy, welfare, or innovation leadership. Those claims require source notes that are outside this smoke input. A polished version can still sound like economics prose: it can say that carbon markets create compliance incentives, that manufacturing is an important margin for emissions intensity, and that timing-based evidence is useful because it separates policy exposure from cross-sectional differences. The key is to make each of those points as framing, not as a result."
+                ),
+                (
+                    "Author note: the contribution language should be modest but not apologetic. The paper's contribution is a transparent evidence-to-writing path for an environmental DID design, not a claim that the current fixture has settled the full literature on emissions trading. The author wants the manuscript to show how a reader would move from a typed EvidencePack to a draft that names the estimand, reports the event-study surface, interprets the main contrast in the declared outcome scale, and identifies the missing human judgments. In the introduction, this means the prose should preview the empirical objects that are actually available: model-table estimates, event-study rows, pretrend diagnostics, robustness families, placebo timing checks, heterogeneity dimensions, summary statistics, and a figure manifest. It should avoid inventing an institutional chronology beyond the supplied context. The best first-page rhythm is therefore concrete: what policy exposure is studied, what units are observed, what comparison is used, what evidence is reported, and what parts remain author-owned before release."
+                ),
+            ],
+        },
+        {
+            "section": "02_data.md",
+            "note_id": "env_data_construction_001",
+            "status": "author_provided",
+            "title": "Sample And Measurement Boundaries",
+            "paragraphs": [
+                (
+                    "Author note: the data section should say plainly that the unit is a manufacturing plant-year and that the current smoke design covers treated plants and neighboring never-treated plants between 2010 and 2022. The text should not imply that the fixture contains the final administrative data, all cleaning rules, or the complete sampling frame of a real paper. It is enough for this vertical slice to show that every downstream numerical sentence inherits an explicit unit, outcome, treatment, time variable, fixed-effect structure, and clustering statement. The data section should therefore distinguish between declared sample scope and final data documentation. Declared scope is present and can be written. Source construction, exclusions, matching rules, plant entry and exit, sector definitions, and emissions-metering details remain author tasks unless they are supplied in later notes. That distinction is important because a release-length section can be long without being overconfident: it can explain what the draft knows, why those fields matter for interpreting the DID design, and where the author must still document the source data before submission."
+                ),
+                (
+                    "Author note: magnitude context should be introduced as a display discipline, not as a substantive conclusion. The outcome is log CO2 intensity points, and the intake supplies a mean, standard deviation, and benchmark. Those values let the writer say how to read a coefficient in relation to the declared scale, but they do not justify converting the coefficient into aggregate tons, welfare gains, or economy-wide emissions reductions. The data section should make that boundary visible because environmental economics readers care about units. A coefficient that sounds small in logs may be large relative to cross-plant variation, and a coefficient that is large relative to the stated standard deviation may also reveal a data or scale issue that the author should inspect. The prose should therefore treat magnitude context as a review hook: it tells the author what to verify before publication. This is more useful than a generic paragraph about data quality because it connects scale, outcome definition, and evidence safety."
+                ),
+            ],
+        },
+        {
+            "section": "01_introduction.md",
+            "note_id": "env_intro_release_readiness_001",
+            "status": "author_provided",
+            "title": "Release-Readiness Framing",
+            "paragraphs": [
+                (
+                    "Author note: the introduction should make the reader feel that the paper has a real empirical object before it discusses the automated drafting boundary. The manuscript can do this by naming the exposed manufacturing plants, the never-treated comparison plants, the event-time design, and the outcome scale in ordinary prose. The release-ready version should not sound like a product demo. It should sound like an environmental-economics paper whose evidence happens to be routed through a strict contract. The software boundary belongs in the background: it explains why claims are conservative, why diagnostics are labeled, and why missing inputs remain visible. The front of the paper should still prioritize the substantive question of whether carbon-market exposure is associated with changes in plant-level emissions intensity."
+                ),
+                (
+                    "Author note: the first-page narrative should avoid two opposite mistakes. One mistake is a thin scaffold that only says a DID was run and a coefficient exists. The other is a grand policy essay that claims broad climate relevance before the setting has earned it. The desired middle path is specific and grounded: carbon markets price emissions, manufacturing plants are a key compliance margin, emissions intensity is the outcome that connects plant operations to policy exposure, and the event-study design gives the reader a timing-based way to inspect the evidence. Each clause should map to a supplied input or artifact. If a later author note adds policy chronology, enforcement details, permit allocation rules, or sector-specific compliance constraints, those details can deepen the introduction. Until then, the prose should stay precise."
+                ),
+                (
+                    "Author note: the introduction may also tell readers why the draft is intentionally explicit about gates. In a conventional paper, weak or missing inputs often disappear into vague language. This vertical slice does the opposite: it records when literature positioning comes from verified notes, when mechanism language is author-labeled, and when robustness artifacts are present but not yet converted into claims. That transparency is part of the paper's voice. It should not be apologetic, because the resulting draft is more inspectable than a polished paragraph built from invented background. The author wants the introduction to make that discipline legible without turning the paper into a methods manual."
+                ),
+                (
+                    "Author note: the final introduction paragraph should set expectations for the rest of the manuscript. Data describe the plant-year sample and magnitude scale. Empirical strategy explains the DID/event-study comparison and the author-declared identifying boundary. Results report ledger-backed estimates and leave repeated event-time rows to figures or tables. Robustness and heterogeneity describe diagnostic coverage. Mechanisms carry author-labeled interpretation rather than verified decomposition. Limitations state what remains outside the evidence pack. This roadmap is not filler; it gives the reader a clean contract for how to read the draft. It is also the difference between a 2,500-word scaffold and a manuscript-length document that earns its length through author-supplied structure."
+                ),
+            ],
+        },
+        {
+            "section": "03_empirical_strategy.md",
+            "note_id": "env_strategy_estimand_001",
+            "status": "author_provided",
+            "title": "Design Voice And Identification Boundary",
+            "paragraphs": [
+                (
+                    "Author note: the empirical-strategy section should be written in the voice of a DID/event-study paper, but it should not overclaim. The declared estimand is the average change in log emissions intensity for plants exposed to pilot carbon market coverage relative to never-treated comparison plants. The writer can explain that plant fixed effects absorb time-invariant plant differences and year fixed effects absorb common shocks. It can also explain that clustering at the plant level is the declared inference convention. What it cannot do is assert that parallel trends are substantively credible merely because a pretrend artifact exists. The pretrend test and pre-treatment event-study rows are diagnostics; they support a discussion of design credibility only after the author has stated why treated and never-treated plants are comparable in the relevant policy environment. The section should therefore separate estimator description from identifying assumption. This makes the methods prose longer and more complete without turning a statistical artifact into an economics argument."
+                ),
+                (
+                    "Author note: the event-study explanation should emphasize why the timing profile is useful. The current design has a single adoption cohort and never-treated controls, so the event-time coefficients can be read as a profile around market launch rather than as a fully generalized staggered-adoption aggregation problem. The text should still be cautious: the writing layer should not introduce Goodman-Bacon weights, HonestDiD bounds, or randomization-inference p-values unless those artifacts exist. The appropriate release-style paragraph says that the EvidencePack contains an event-study table, a pretrend test, and a figure manifest, and that these objects organize the timing evidence. It can then explain the intended interpretation sequence: inspect pre-treatment movement, report the main post-exposure contrast, use the figure for the pattern across event time, and reserve stronger identification language for author-confirmed assumptions. This gives the reader a complete methods path while preserving the hard boundary that econpaper does not estimate or manufacture diagnostics."
+                ),
+                (
+                    "Author note: the section should also make clear why econpaper and skill4econ are separated. In the paper draft this does not need to sound like software documentation, but the underlying principle matters for credibility. The estimation layer produces typed artifacts, with schema versions and provenance. The writing layer imports those artifacts, checks the gates, and renders prose. It never reruns the estimator, constructs a new standard error, or aggregates event-study rows into a new ATT. A methods paragraph can translate that architecture into ordinary manuscript language by saying that all empirical claims in the draft are drawn from pre-specified tables, diagnostics, and manifests. This helps reviewers understand why the draft is conservative: when a diagnostic is absent, the manuscript shows a labeled gap; when an artifact is present but not claim-ready, it stays in a table or appendix rather than becoming a sentence. That is a substantive methods choice, not just an implementation detail."
+                ),
+            ],
+        },
+        {
+            "section": "02_data.md",
+            "note_id": "env_data_review_checks_001",
+            "status": "author_provided",
+            "title": "Reader Checks For Data Claims",
+            "paragraphs": [
+                (
+                    "Author note: the data section should help the reader audit the empirical claim without needing to inspect code. It should make clear that treatment status, event time, unit identifiers, calendar year, outcome units, and clustering are not decorative labels; they are the fields that determine whether a numerical sentence is interpretable. If the outcome were renamed, if the treatment timing were redefined, or if the cluster variable changed, the Results section would need to be regenerated. The author wants this dependency to be explicit because it protects against a common drafting error: treating variable names as interchangeable once an estimate has been produced. In this project, the writing layer should show that the plant-year grain, policy exposure, and log emissions-intensity outcome move together as a single contract."
+                ),
+                (
+                    "Author note: the sample description should also tell readers what is deliberately not concluded from the fixture. The smoke input does not document final source files, plant matching, sector composition, missing-data treatment, censoring rules, or entry and exit. A release draft would need those details, and the current data section should leave room for them rather than pretending they are already known. The useful contribution of the current draft is narrower: it demonstrates that once those details are supplied, the manuscript has a place to carry them and a gate that can prevent unsupported data claims from leaking into results. This is the right level of detail for a vertical slice because it supports serious review without inventing a data appendix."
+                ),
+                (
+                    "Author note: the writer should avoid turning summary statistics into causal evidence. Means, standard deviations, and benchmarks are necessary for scale, but they do not identify the effect of carbon-market exposure. The data section can say that the outcome has a declared mean and standard deviation, and that these values discipline magnitude language later in the paper. It should not say the treated plants were comparable to controls in every relevant way unless balance or descriptive comparison artifacts are added. This keeps the data prose honest and gives the author a concrete next step: supply balance tables, sample-construction notes, and source documentation when the paper moves beyond the smoke fixture."
+                ),
+            ],
+        },
+        {
+            "section": "04_results.md",
+            "note_id": "env_results_interpretation_001",
+            "status": "author_provided",
+            "title": "Result Interpretation Plan",
+            "paragraphs": [
+                (
+                    "Author note: the Results section should be organized around two empirical objects: the main treatment-period DID contrast and the event-study timing profile. The main contrast should appear first because it is the clearest sentence for readers. The event-study anchor should follow as timing evidence, with the full sequence left to the figure or table. The author does not want a paragraph that mechanically restates every coefficient. That style looks busy and creates a false sense that each event-time row is a separate finding. Instead, the prose should tell the reader what to look for: whether pre-treatment rows are quiet enough to support the design narrative, whether the treatment-period estimate is economically meaningful in the declared scale, and whether the post-treatment pattern is consistent with the policy timing. If the claim ledger holds additional safe event-study rows, the section should mention that they are available in the artifact surface while preserving a single narrative spine."
+                ),
+                (
+                    "Author note: magnitude language should remain visible and reviewable. The coefficient is in log CO2 intensity points, and the smoke intake supplies mean and standard-deviation context. The writer may translate the verified estimate into that declared scale, but should not call the effect large or small without showing the basis for the label. The author wants the section to flag any uncomfortable scale implication rather than smoothing it away. If a standardized comparison looks big, the response should be to review outcome units, summary statistics, and sample construction, not to replace the magnitude with softer prose. The Results section can therefore sound mature by acknowledging the interpretation boundary directly: the estimate is ledger-backed, the display-scale comparison follows the declared magnitude context, and welfare or aggregate-emissions interpretation is left outside the current evidence pack. That posture is more polished than a generic significant-result paragraph because it anticipates the questions a careful environmental-economics referee would ask."
+                ),
+            ],
+        },
+        {
+            "section": "05_robustness.md",
+            "note_id": "env_robustness_priorities_001",
+            "status": "author_provided",
+            "title": "Robustness Priorities",
+            "paragraphs": [
+                (
+                    "Author note: the robustness section should describe coverage before interpretation. The current artifact grid contains multiple families, including estimator comparison, sample construction, placebo timing, subgroup heterogeneity, and cluster diagnostics. A release-quality draft should not present this as a victory lap. It should explain what each family is meant to stress-test and what the grid can and cannot prove. Estimator comparison checks whether the main pattern is tied to a single implementation choice. Sample-construction checks ask whether the result depends on the declared panel boundary. Placebo timing checks look for patterns where the policy should not mechanically operate. Cluster diagnostics remind the reader that inference depends on the stated unit. Subgroup rows organize heterogeneity but do not prove mechanisms. The point is to turn the robustness table into a map of design pressure points rather than a pile of reassuring labels."
+                ),
+                (
+                    "Author note: the section should avoid saying the results are robust across all checks unless the grid contains structured estimates and a pre-specified rule for summary language. In this vertical slice, the safe sentence is that the robustness architecture is present and that the computed families are visible to the author and reviewer. If a future version includes coefficient columns, confidence intervals, and stable comparison rules for each family, the writer can move from coverage language to substantive robustness claims. Until then, the author wants the draft to sound careful: it should say which diagnostic surfaces exist, why they matter, and what additional interpretation would be needed before release. This is especially important for placebo timing, because a passed or computed placebo artifact can be rhetorically overused. The author prefers a bounded phrasing that treats placebo rows as diagnostic evidence rather than as proof that every alternative explanation has been eliminated."
+                ),
+            ],
+        },
+        {
+            "section": "06_mechanisms.md",
+            "note_id": "env_mechanism_scope_001",
+            "status": "author_provided",
+            "title": "Mechanism Scope",
+            "paragraphs": [
+                (
+                    "Author note: mechanism language should be explicitly labeled as interpretation unless separate mechanism diagnostics are added. The current author assertion names compliance-driven process upgrades and fuel-substitution incentives. Those are plausible channels in a carbon-market setting, but the EvidencePack does not decompose emissions changes into technology adoption, input substitution, output composition, or abatement investments. The mechanism section should therefore explain the channel as the author's interpretation of why exposure might matter, not as an established empirical result. This gives the manuscript a more complete economics feel while keeping the safety boundary intact. The reader sees the theory of change, and the author sees exactly what evidence would be needed to upgrade the language: source notes on compliance behavior, auxiliary outcomes, plant investment measures, fuel-use data, or a formal mechanism table."
+                ),
+                (
+                    "Author note: the mechanism section should also resist a common environmental-economics shortcut: treating reduced emissions intensity as automatic evidence of cleaner technology. The same measured outcome could reflect process upgrades, fuel mix, output composition, reporting changes, or selection within the observed sample. The draft should not decide among those channels unless the author supplies evidence. A polished mechanism paragraph can still be useful by saying that the main estimate is consistent with the author's proposed compliance channel, while the current vertical slice does not separately identify the channel. That sentence is much better than omitting mechanisms altogether, because it tells reviewers the author's conceptual model and the empirical limitation in the same breath. It also avoids the more dangerous failure mode of pretending the mechanism is proven because the main coefficient has the expected sign."
+                ),
+            ],
+        },
+        {
+            "section": "07_heterogeneity.md",
+            "note_id": "env_heterogeneity_interpretation_001",
+            "status": "author_provided",
+            "title": "Heterogeneity Interpretation",
+            "paragraphs": [
+                (
+                    "Author note: heterogeneity should be introduced as a pre-specified diagnostic surface rather than as a collection of subgroup stories. The current smoke run includes province-group and baseline-size dimensions. Those labels are useful because they point to plausible economic differences in exposure, compliance capacity, and baseline emissions intensity, but the manuscript should not rank groups or claim differential treatment effects unless the subgroup estimates and inference fields are converted into verified claims. The author wants this section to say that heterogeneity diagnostics are present, that some rows may be skipped when treatment variation is insufficient, and that substantive subgroup interpretation requires an author-provided plan. This avoids two bad outcomes: a thin draft that hides the heterogeneity surface, and an overconfident draft that invents stories for subgroup differences. The release version should eventually say why these dimensions were chosen before looking at results and how multiple-testing or interpretation discipline is handled."
+                ),
+            ],
+        },
+        {
+            "section": "08_limitations.md",
+            "note_id": "env_limitations_release_boundary_001",
+            "status": "author_provided",
+            "title": "Release Boundary",
+            "paragraphs": [
+                (
+                    "Author note: the limitations section should not read like a ritual caveat paragraph. Its central job is to tell the reader where the machine evidence contract ends. The current vertical slice has strong typed artifacts for a DID/event-study draft, but it still lacks final author judgment on institutional detail, literature positioning, identifying assumptions, source construction, and mechanism evidence. That is not a failure of the draft; it is the reason the tier system exists. Tier B can be useful because it exposes the scaffold and the remaining boxes. Tier A should require a longer, author-informed manuscript, not merely a longer generated file. The limitations section should say this in manuscript language: empirical estimates are reported from typed artifacts, interpretation is bounded by the declared design and magnitude context, and release requires human evaluation and author-owned economics."
+                ),
+                (
+                    "Author note: external validity should be bounded to manufacturing plants in the declared policy and sample window. The draft should not generalize to all carbon markets, all firms, or all emissions outcomes. It can say that the setting is informative for plant-level emissions intensity under pilot carbon-market exposure, but it should not claim that the same pattern holds for household behavior, services firms, national cap-and-trade programs, or welfare outcomes. The author wants the paper to earn generality later through literature comparison and institutional detail, not by broad wording now. A strong limitations paragraph can therefore be precise without sounding weak. It can say the evidence is designed to answer a specific question well, while larger policy implications require additional source notes and possibly additional empirical designs."
+                ),
+            ],
+        },
+        {
+            "section": "09_conclusion.md",
+            "note_id": "env_conclusion_takeaway_001",
+            "status": "author_provided",
+            "title": "Conclusion Takeaway",
+            "paragraphs": [
+                (
+                    "Author note: the conclusion should return to the narrow value of the vertical slice: it demonstrates how an environmental DID EvidencePack can become a bounded manuscript draft without crossing into hidden estimation or invented interpretation. The final paragraph should be useful to a reader who wants to know what has been learned and what remains. It can restate that carbon-market exposure is associated with a change in plant-level emissions intensity in the verified model output, that event-study diagnostics organize the timing evidence, and that robustness and heterogeneity artifacts are present as diagnostic surfaces. It should then name the remaining release tasks: author-confirmed institutional chronology, literature-positioning notes, mechanism evidence or clearly labeled mechanism interpretation, final source-construction documentation, and human evaluation. The tone should be confident about the scaffold and humble about the economics that still belongs to the author."
+                ),
+                (
+                    "Author note: the closing sentence should also explain why the manuscript is useful before every release input is complete. A bounded draft lets the author inspect the exact claims the evidence supports, the exact places where interpretation is merely author-labeled, and the exact artifacts that would strengthen the paper. That is a practical research workflow, not a weaker substitute for scholarship. The release version should preserve this clarity even after human polish, because the transparency is part of the paper's contribution."
+                ),
+                (
+                    "Author note: the final version should keep the distinction between manuscript readiness and release readiness visible. A machine Tier A pack means the typed evidence, prose surface, citations, author notes, and length gates are internally consistent. It does not mean the economics has been endorsed by a scholar. The conclusion should leave that distinction intact so that human reviewers can focus on judgment rather than reconstruction."
+                ),
+                (
+                    "Author note: the author also wants the closing to point back to the practical value of the artifact boundary. The reader should be able to open the manuscript, the AUTHOR_REPORT, and the internal metrics and see the same story from different angles: the prose names only supported claims, the report lists which claims were safe or flagged, and the metrics explain why the pack is or is not releasable. That alignment matters because it keeps revision work concrete. A future author can add source notes, human evaluations, or mechanism diagnostics and rerun the pack, instead of trying to remember which sentences were speculative. The conclusion should therefore frame the draft as a controlled research object that can mature into a submission, not as an automated substitute for judgment."
+                ),
+            ],
+        },
+    ]
 
 
 def _static_checks(case: SmokeCase, pack_dir: Path) -> dict[str, Any]:
@@ -437,6 +788,11 @@ def _static_checks(case: SmokeCase, pack_dir: Path) -> dict[str, Any]:
     claim_ledger = _load_json(pack_dir / "claim_ledger.json")
     coherence = _load_json(pack_dir / "reports" / "internal" / "global_coherence.json")
     compile_report = _load_json(pack_dir / "reports" / "internal" / "compile_report.json")
+    metrics_payload = _load_json(pack_dir / "reports" / "internal" / "metrics.json")
+    metrics = metrics_payload.get("metrics") if isinstance(metrics_payload.get("metrics"), dict) else {}
+    evidence_pack = _load_json(pack_dir / "evidence_pack.json")
+    minimal_gate = _load_json(pack_dir / "reports" / "internal" / "minimal_intake_gate.json")
+    run_validation = _load_json(pack_dir / "reports" / "internal" / "run_validation.json")
     safe_claims = [claim for claim in claim_ledger.get("claims", []) if isinstance(claim, dict) and claim.get("status") == "safe"]
     flagged_claims = [claim for claim in claim_ledger.get("claims", []) if isinstance(claim, dict) and claim.get("status") == "flag_and_confirm"]
     diagnostic_terms = [
@@ -460,6 +816,23 @@ def _static_checks(case: SmokeCase, pack_dir: Path) -> dict[str, Any]:
         "coherence_status": coherence.get("status"),
         "compile_status": compile_report.get("status"),
         "pdf_exists": (pack_dir / "main.pdf").exists(),
+        "minimal_intake_gate_status": minimal_gate.get("status"),
+        "run_validation_status": run_validation.get("status"),
+        "run_data_provenance": run_validation.get("data_provenance"),
+        "draft_tier": metrics_payload.get("draft_tier"),
+        "evidence_pack_status": metrics.get("evidence_pack_status") or (evidence_pack.get("validation") or {}).get("status"),
+        "artifact_types": metrics.get("artifact_types") or sorted(
+            {
+                item.get("artifact_type")
+                for item in evidence_pack.get("artifacts", [])
+                if isinstance(item, dict) and item.get("artifact_type")
+            }
+        ),
+        "did_tier_a_missing_artifacts": metrics.get("did_tier_a_missing_artifacts"),
+        "did_tier_a_incomplete_artifacts": metrics.get("did_tier_a_incomplete_artifacts"),
+        "did_tier_b_missing_artifacts": metrics.get("did_tier_b_missing_artifacts"),
+        "did_tier_b_incomplete_artifacts": metrics.get("did_tier_b_incomplete_artifacts"),
+        "sections_floor_count": metrics.get("sections_floor_count"),
         "unresolved_numeric_placeholders": "{{" in section_and_main_text,
         "author_report_unrendered_claim_placeholders": "{{" in existing_text.get("AUTHOR_REPORT.md", ""),
         "author_input_needed_count": markdown_text.count("[AUTHOR_INPUT_NEEDED]"),
@@ -541,6 +914,36 @@ def _extract_tokens_used(raw: str) -> int | None:
     return int(lines[-1].replace(",", "")) if lines else None
 
 
+def _extract_run_dir_from_cli_stdout(stdout: str) -> str | None:
+    text = stdout.strip()
+    if not text:
+        return None
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        run_dir = payload.get("run_dir") or (payload.get("manifest") or {}).get("run_dir")
+        if run_dir:
+            return str(run_dir)
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            payload, _end = decoder.raw_decode(text[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            run_dir = payload.get("run_dir") or (payload.get("manifest") or {}).get("run_dir")
+            if run_dir:
+                return str(run_dir)
+    return None
+
+
 def _codex_subscription_path() -> str | None:
     status = subscription_status(timeout=20).to_dict()
     codex = status.get("subscriptions", {}).get("codex", {})
@@ -566,6 +969,7 @@ def _run_command(
     proc = subprocess.run(
         run_args,
         cwd=cwd,
+        env=_subprocess_env(),
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -582,6 +986,16 @@ def _run_command(
         "stdout_tail": proc.stdout[-3000:],
         "stderr_tail": proc.stderr[-3000:],
     }
+
+
+def _subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    paths = [str(REPO_ROOT), str(REPO_ROOT / "skill4econ" / "src")]
+    existing = env.get("PYTHONPATH")
+    if existing:
+        paths.append(existing)
+    env["PYTHONPATH"] = os.pathsep.join(paths)
+    return env
 
 
 def _redact_command(cmd: list[str]) -> list[str]:
@@ -657,13 +1071,26 @@ def _summary_md(summary: dict[str, Any]) -> str:
         "",
         "## Cases",
         "",
-        "| Case | Venue | Write | Release gate | PDF | Tokens | Key issues |",
-        "|---|---:|---:|---:|---:|---:|---|",
+        "| Case | Source | Tier | Venue | Write | Release gate | PDF | Tokens | Key issues |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---|",
     ]
     for item in summary["cases"]:
         checks = item["static_checks"]
         review = item.get("codex_review") or {}
+        source = (item.get("skill4econ") or {}).get("mode") or "unknown"
         issues: list[str] = []
+        if source != "real_skill4econ":
+            issues.append(source)
+        if checks.get("minimal_intake_gate_status") == "failed":
+            issues.append("minimal intake failed")
+        if checks.get("evidence_pack_status") not in {None, "passed"}:
+            issues.append(f"EvidencePack {checks.get('evidence_pack_status')}")
+        missing_a = checks.get("did_tier_a_missing_artifacts") or []
+        incomplete_a = checks.get("did_tier_a_incomplete_artifacts") or []
+        if missing_a:
+            issues.append("DID A missing: " + ",".join(map(str, missing_a[:4])))
+        if incomplete_a:
+            issues.append("DID A incomplete: " + ",".join(map(str, incomplete_a[:4])))
         if checks["public_absolute_path_leaks"]:
             issues.append("public absolute path leak")
         if checks.get("portable_path_references"):
@@ -682,6 +1109,8 @@ def _summary_md(summary: dict[str, Any]) -> str:
             + " | ".join(
                 [
                     f"`{item['case_id']}`",
+                    source,
+                    str(checks.get("draft_tier")),
                     item["venue"],
                     str(item["write"]["returncode"]),
                     item["release_gate"].get("status") or "<missing>",

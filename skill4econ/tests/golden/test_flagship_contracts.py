@@ -61,6 +61,94 @@ def test_did_golden_common_schema_has_estimand_support_and_twfe_role(tmp_path: P
     assert "event_time_support" in common
     assert common["aggregation_method"] in {"simple", "event_time"}
     assert common["twfe_role"] in {"main", "comparison_only", "forbidden_for_main", "not_used"}
+    for artifact_name in [
+        "summary_stats.csv",
+        "cohort_table.csv",
+        "event_study.csv",
+        "pretrend_test.json",
+        "robustness_grid.csv",
+        "figures/manifest.yaml",
+    ]:
+        assert ctx.artifact(artifact_name).exists(), artifact_name
+    artifact_manifest = json.loads(ctx.artifact("artifact_manifest.json").read_text(encoding="utf-8"))
+    evidence_types = {
+        item.get("evidence_type")
+        for item in artifact_manifest["artifacts"]
+        if item.get("evidence_type")
+    }
+    assert {
+        "model_table",
+        "event_study",
+        "pretrend_test",
+        "cohort_table",
+        "robustness_grid",
+        "summary_stats",
+        "figure_manifest",
+    } <= evidence_types
+    assert validate_run_dir(ctx.run_dir, strict=True).status == "passed"
+
+
+def test_did_golden_author_configured_placebo_and_heterogeneity_artifacts(tmp_path: Path) -> None:
+    rows = []
+    for unit in range(1, 21):
+        ever = int(unit <= 10)
+        region = "north" if unit % 2 == 0 else "south"
+        size_group = "large" if unit in {1, 2, 3, 4, 5, 11, 12, 13, 14, 15} else "small"
+        for year in range(2015, 2022):
+            post = int(year >= 2019)
+            placebo_post = int(year >= 2017)
+            treatment_effect = ever * post * (1.0 + 0.2 * (region == "north") + 0.1 * (size_group == "large"))
+            rows.append(
+                {
+                    "firm_id": unit,
+                    "year": year,
+                    "y": 5.0 + unit * 0.2 + (year - 2015) * 0.1 + treatment_effect,
+                    "treat": ever,
+                    "post": post,
+                    "placebo_post": placebo_post,
+                    "region": region,
+                    "size_group": size_group,
+                }
+            )
+    data = tmp_path / "configured_did.csv"
+    pd.DataFrame(rows).to_csv(data, index=False)
+    spec = {
+        "data": str(data),
+        "design_type": "simple_2x2_did",
+        "id": "firm_id",
+        "time": "year",
+        "y": "y",
+        "treat": "treat",
+        "post": "post",
+        "cluster": "firm_id",
+        "engine_policy": "python",
+        "event_window": [-2, 2],
+        "base_period": -1,
+        "placebo_tests": [{"name": "fake_2017_timing", "post": "placebo_post"}],
+        "heterogeneity_dimensions": ["region", "size_group"],
+        "variable_units": {"y": "index points"},
+        "output_dir": str(tmp_path / "runs"),
+    }
+    ctx = make_run_context("did_paper_run", "workflow", spec, "run", str(tmp_path / "runs"))
+    manifest = did_paper_run(ctx)
+    assert manifest["status"] == "success"
+    for artifact_name in ["placebo_tests.csv", "heterogeneity.csv"]:
+        assert ctx.artifact(artifact_name).exists(), artifact_name
+
+    placebo_rows = pd.read_csv(ctx.artifact("placebo_tests.csv"))
+    heterogeneity_rows = pd.read_csv(ctx.artifact("heterogeneity.csv"))
+    robustness_rows = pd.read_csv(ctx.artifact("robustness_grid.csv"))
+    assert set(placebo_rows["status"]) == {"computed"}
+    assert {"region", "size_group"} <= set(heterogeneity_rows.loc[heterogeneity_rows["status"] == "computed", "dimension"])
+    assert len(set(robustness_rows["family"])) >= 4
+
+    artifact_manifest = json.loads(ctx.artifact("artifact_manifest.json").read_text(encoding="utf-8"))
+    evidence_types = {
+        item.get("evidence_type")
+        for item in artifact_manifest["artifacts"]
+        if item.get("evidence_type")
+    }
+    assert {"placebo_tests", "heterogeneity"} <= evidence_types
     assert validate_run_dir(ctx.run_dir, strict=True).status == "passed"
 
 

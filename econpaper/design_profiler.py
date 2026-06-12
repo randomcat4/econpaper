@@ -176,38 +176,49 @@ def _contains(artifacts: set[str], *needles: str) -> bool:
     return any(all(needle in item for needle in needles) for item in artifacts)
 
 
+def _contains_any(artifacts: set[str], alternatives: list[tuple[str, ...]]) -> bool:
+    return any(_contains(artifacts, *needles) for needles in alternatives)
+
+
 def _diagnostics_for_design(design_type: str, artifacts: set[str]) -> tuple[list[str], list[str]]:
     design = design_type.lower()
-    required: dict[str, tuple[str, ...]] = {}
+    required: dict[str, list[tuple[str, ...]]] = {}
     if "did" in design:
         required = {
-            "event_study": ("event", "study"),
-            "pretrend": ("pretrend",),
-            "comparison_group": ("comparison",),
-            "modern_staggered_estimator": ("staggered",),
+            "event_study": [("event", "study")],
+            "pretrend": [("pretrend",), ("pre_trend",)],
+            "comparison_group": [("comparison",), ("cohort",), ("never", "treated"), ("control",)],
         }
+        if "staggered" in design:
+            required["modern_staggered_estimator"] = [
+                ("staggered",),
+                ("callaway",),
+                ("sun", "abraham"),
+                ("did_imputation",),
+                ("drdid",),
+            ]
     elif "iv" in design:
         required = {
-            "first_stage": ("first", "stage"),
-            "weak_iv": ("weak", "iv"),
-            "reduced_form": ("reduced", "form"),
+            "first_stage": [("first", "stage")],
+            "weak_iv": [("weak", "iv")],
+            "reduced_form": [("reduced", "form")],
         }
     elif "rdd" in design or "rd" == design:
         required = {
-            "rd_plot": ("rd", "plot"),
-            "manipulation_test": ("manipulation",),
-            "bandwidth_sensitivity": ("bandwidth",),
-            "covariate_continuity": ("covariate", "continuity"),
+            "rd_plot": [("rd", "plot")],
+            "manipulation_test": [("manipulation",)],
+            "bandwidth_sensitivity": [("bandwidth",)],
+            "covariate_continuity": [("covariate", "continuity")],
         }
     elif "finance" in design or "event_study" in design:
         required = {
-            "event_timeline": ("event", "timeline"),
-            "leakage_check": ("leakage",),
-            "factor_adjusted": ("factor",),
+            "event_timeline": [("event", "timeline")],
+            "leakage_check": [("leakage",)],
+            "factor_adjusted": [("factor",)],
         }
     else:
-        required = {"structured_model_table": ("model_table",)}
-    present = [name for name, needles in required.items() if _contains(artifacts, *needles)]
+        required = {"structured_model_table": [("model_table",)]}
+    present = [name for name, alternatives in required.items() if _contains_any(artifacts, alternatives)]
     missing = [name for name in required if name not in present]
     return present, missing
 

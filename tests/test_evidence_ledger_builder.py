@@ -148,9 +148,41 @@ def test_cli_writes_evidence_ledger_reports(tmp_path: Path) -> None:
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert (out / "evidence_ledger.json").exists()
+    assert (out / "evidence_pack.json").exists()
     assert (out / "reports" / "internal" / "evidence_ledger.json").exists()
+    assert (out / "reports" / "internal" / "evidence_pack_validation.json").exists()
     assert (out / "reports" / "internal" / "magnitude_semantics.json").exists()
     assert (out / "AUTHOR_REPORT.md").exists()
+
+
+def test_write_evidence_ledger_merges_manifest_artifacts_for_downstream_gates(tmp_path: Path) -> None:
+    run_dir = _run_dir(tmp_path)
+    _write_csv(run_dir / "model_table.csv", [{"term": "treat", "coef": "0.03", "std_error": "0.01", "p_value": "0.025"}])
+    _write_csv(run_dir / "event_study.csv", [{"event_time": "0", "coef": "0.03", "std_error": "0.01"}])
+    _write_json(run_dir / "pretrend_test.json", {"p_value": 0.42, "lead_count": 2})
+    _write_csv(run_dir / "cohort_table.csv", [{"cohort": "2019", "n_units": "20"}])
+    _write_json(
+        run_dir / "artifact_manifest.json",
+        {
+            "workflow": "did_paper_run",
+            "run_id": "fixture_run",
+            "status": "success",
+            "artifacts": [
+                {"path": "model_table.csv", "type": "model_table", "exists": True},
+                {"path": "event_study.csv", "type": "table", "evidence_type": "event_study", "exists": True},
+                {"path": "pretrend_test.json", "type": "model_result", "evidence_type": "pretrend_test", "exists": True},
+                {"path": "cohort_table.csv", "type": "table", "evidence_type": "cohort_table", "exists": True},
+            ],
+            "missing_required_artifacts": [],
+        },
+    )
+
+    out = tmp_path / "evidence_pack"
+    write_evidence_ledger(run_dir=run_dir, out_dir=out)
+
+    ledger = json.loads((out / "evidence_ledger.json").read_text(encoding="utf-8"))
+    artifact_types = {artifact["artifact_type"] for artifact in ledger["artifacts"]}
+    assert {"model_table", "event_study", "pretrend_test", "cohort_table"} <= artifact_types
 
 
 def test_tex_table_path_alone_does_not_create_evidence(tmp_path: Path) -> None:

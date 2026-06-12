@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
+from skill4econ.contracts.artifact_manifest import build_artifact_manifest, infer_econpaper_evidence_type
 from skill4econ.core import make_run_context, write_manifest
 from skill4econ.contracts.claim_levels import ClaimLevel, PaperReadiness
 from skill4econ.contracts.claim_levels import infer_claim_contract
@@ -123,3 +125,60 @@ def test_schema_files_load() -> None:
     }
     for path in schemas:
         assert load_schema(path.name).get("$schema")
+
+
+def test_artifact_manifest_marks_econpaper_evidence_types(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    (run_dir / "figures").mkdir(parents=True)
+    for rel_path in [
+        "model_table.csv",
+        "event_study.csv",
+        "pretrend_test.json",
+        "cohort_table.csv",
+        "robustness_grid.csv",
+        "placebo_tests.csv",
+        "heterogeneity.csv",
+        "summary_stats.csv",
+        "figures/manifest.yaml",
+    ]:
+        path = run_dir / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("fixture\n", encoding="utf-8")
+
+    manifest = build_artifact_manifest(
+        workflow="did_paper_run",
+        run_id="fixture",
+        run_dir=run_dir,
+        status="success",
+        required_artifacts=[
+            "model_table.csv",
+            "event_study.csv",
+            "pretrend_test.json",
+            "cohort_table.csv",
+            "robustness_grid.csv",
+            "placebo_tests.csv",
+            "heterogeneity.csv",
+            "summary_stats.csv",
+            "figures/manifest.yaml",
+        ],
+    )
+
+    by_path = {item["path"]: item for item in manifest["artifacts"]}
+    assert manifest["evidence_contract"]["schema_version"] == "evidence_pack.v2"
+    assert by_path["model_table.csv"]["evidence_type"] == "model_table"
+    assert by_path["event_study.csv"]["evidence_type"] == "event_study"
+    assert by_path["pretrend_test.json"]["evidence_type"] == "pretrend_test"
+    assert by_path["cohort_table.csv"]["evidence_type"] == "cohort_table"
+    assert by_path["robustness_grid.csv"]["evidence_type"] == "robustness_grid"
+    assert by_path["placebo_tests.csv"]["evidence_type"] == "placebo_tests"
+    assert by_path["heterogeneity.csv"]["evidence_type"] == "heterogeneity"
+    assert by_path["summary_stats.csv"]["evidence_type"] == "summary_stats"
+    assert by_path["figures/manifest.yaml"]["evidence_type"] == "figure_manifest"
+    assert manifest["missing_required_artifacts"] == []
+
+
+def test_econpaper_evidence_type_inference_is_conservative() -> None:
+    assert infer_econpaper_evidence_type(Path("event_study_support.csv")) is None
+    assert infer_econpaper_evidence_type(Path("event_study_plot.png")) is None
+    assert infer_econpaper_evidence_type(Path("event_study.csv")) == "event_study"
+    assert infer_econpaper_evidence_type(Path("figures/manifest.yaml")) == "figure_manifest"

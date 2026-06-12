@@ -58,6 +58,22 @@ def test_staggered_did_missing_modern_estimator_is_flag_and_confirm(tmp_path: Pa
     assert "Callaway-Sant'Anna" in profile["reviewer_questions"][0]
 
 
+def test_non_staggered_did_core_artifacts_are_safe(tmp_path: Path) -> None:
+    artifacts = [
+        {"artifact_id": "model_table", "artifact_type": "model_table", "path": "model_table.csv", "hash": "sha256:a"},
+        {"artifact_id": "event_study", "artifact_type": "event_study", "path": "event_study.csv", "hash": "sha256:b"},
+        {"artifact_id": "pretrend", "artifact_type": "pretrend_test", "path": "pretrend_test.json", "hash": "sha256:c"},
+        {"artifact_id": "cohort", "artifact_type": "cohort_table", "path": "cohort_table.csv", "hash": "sha256:d"},
+    ]
+    result = build_design_profile(
+        intake_profile_path=_intake(tmp_path / "intake.json", "DID with event-study diagnostics"),
+        evidence_ledger_path=_evidence(tmp_path / "ledger.json", artifacts),
+    )
+    profile = result.design_profile
+    assert profile["diagnostics_missing"] == []
+    assert profile["claim_levels"]["causal_language"]["tier"] == "safe"
+
+
 def test_complete_iv_diagnostics_can_be_safe(tmp_path: Path) -> None:
     artifacts = [
         {"artifact_id": "iv_first_stage", "artifact_type": "model_table", "path": "first_stage.csv", "hash": "sha256:a"},

@@ -21,6 +21,18 @@ TABLE_SUFFIXES = {".csv", ".xlsx", ".xls"}
 FIGURE_SUFFIXES = {".png", ".jpg", ".jpeg", ".svg", ".pdf"}
 SCRIPT_SUFFIXES = {".do", ".py", ".r", ".sh", ".bat"}
 LOG_SUFFIXES = {".log", ".txt", ".md"}
+ECONPAPER_EVIDENCE_PACK_VERSION = "evidence_pack.v2"
+ECONPAPER_EVIDENCE_TYPES = {
+    "model_table",
+    "event_study",
+    "pretrend_test",
+    "cohort_table",
+    "robustness_grid",
+    "placebo_tests",
+    "heterogeneity",
+    "summary_stats",
+    "figure_manifest",
+}
 
 
 def _as_posix(path: Path) -> str:
@@ -68,20 +80,51 @@ def infer_artifact_role(path: Path) -> str:
     return "supporting"
 
 
+def infer_econpaper_evidence_type(path: Path, role: str = "", workflow: str = "") -> str | None:
+    name = path.name.lower()
+    rel = path.as_posix().lower()
+    text = " ".join([name, rel, role.lower(), workflow.lower()])
+    if name in {"model_table.csv", "model_table.json"} or "model_table" in text:
+        return "model_table"
+    if name in {"event_study.csv", "event_study.json"}:
+        return "event_study"
+    if name in {"pretrend_test.json", "pretrend_test.csv"} or "pretrend" in text or "pre_trend" in text:
+        return "pretrend_test"
+    if name == "cohort_table.csv" or "cohort_table" in text:
+        return "cohort_table"
+    if name == "robustness_grid.csv" or "robustness_grid" in text:
+        return "robustness_grid"
+    if name == "placebo_tests.csv" or "placebo" in text:
+        return "placebo_tests"
+    if name == "heterogeneity.csv" or "heterogeneity" in text:
+        return "heterogeneity"
+    if name in {"summary_stats.csv", "summary_statistics.csv"}:
+        return "summary_stats"
+    if name in {"manifest.yaml", "manifest.yml", "manifest.json"} and "figures/" in rel:
+        return "figure_manifest"
+    return None
+
+
 def _artifact_record(path: Path, run_dir: Path, required_names: set[str], producer: str) -> dict[str, Any]:
     relative = path.relative_to(run_dir)
     rel_text = _as_posix(relative)
     required = rel_text in required_names or path.name in required_names
-    return {
+    role = infer_artifact_role(path)
+    record = {
         "path": rel_text,
         "type": infer_artifact_type(path),
-        "role": infer_artifact_role(path),
+        "role": role,
         "required": required,
         "required_for_paper": required,
         "producer": producer,
         "exists": path.exists(),
         "bytes": int(path.stat().st_size) if path.exists() else None,
     }
+    evidence_type = infer_econpaper_evidence_type(relative, role=role, workflow=producer)
+    if evidence_type:
+        record["evidence_type"] = evidence_type
+        record["evidence_contract"] = ECONPAPER_EVIDENCE_PACK_VERSION
+    return record
 
 
 def build_backend_status(dependency_report: dict[str, Any] | None) -> dict[str, Any]:
@@ -123,6 +166,11 @@ def build_artifact_manifest(
         "run_id": run_id,
         "status": status,
         "input_contract": input_contract,
+        "evidence_contract": {
+            "consumer": "econpaper",
+            "schema_version": ECONPAPER_EVIDENCE_PACK_VERSION,
+            "artifact_type_field": "evidence_type",
+        },
         "artifacts": artifacts,
         "backend_status": build_backend_status(dependency_report),
         "missing_required_artifacts": missing,
