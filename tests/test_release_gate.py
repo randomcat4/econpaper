@@ -294,6 +294,86 @@ def test_tier_b_evidence_boundary_still_blocks_release(tmp_path: Path) -> None:
     assert "draft_tier_below_release_target" in codes
 
 
+def test_spatial_impacts_without_w_audit_block_release(tmp_path: Path) -> None:
+    pack = _pack(tmp_path / "pack")
+    _write_csv(
+        pack / "tables" / "spatial_impact_decomposition.csv",
+        [{"effect": "x", "direct": "0.1", "indirect": "0.2", "total": "0.3"}],
+    )
+    payload = json.loads((pack / "evidence_pack.json").read_text(encoding="utf-8"))
+    payload["artifacts"].append(
+        {
+            "artifact_id": "spatial_impacts",
+            "artifact_type": "spatial_impact_decomposition",
+            "path": "tables/spatial_impact_decomposition.csv",
+            "exists": True,
+            "claimable": True,
+        }
+    )
+    _write_json(pack / "evidence_pack.json", payload)
+    _write_json(pack / "reports" / "internal" / "evidence_pack.json", payload)
+    write_pack_metrics(pack)
+
+    result = run_release_gate(pack_dir=pack, human_eval_path=_human_eval(tmp_path / "human_eval.json"))
+
+    codes = {finding.code for finding in result.findings}
+    assert result.has_hard_blocks is True
+    assert {"spatial_impacts_missing_w_metadata", "spatial_impacts_missing_w_audit", "spatial_impacts_missing_backend_status"} <= codes
+
+
+def test_spatial_impacts_without_uncertainty_block_release(tmp_path: Path) -> None:
+    pack = _pack(tmp_path / "pack")
+    _write_csv(
+        pack / "tables" / "spatial_impact_decomposition.csv",
+        [{"effect": "x", "direct": "0.1", "indirect": "0.2", "total": "0.3"}],
+    )
+    _write_json(pack / "tables" / "spatial_w_metadata.json", {"weights": [{"w_name": "W"}]})
+    _write_json(pack / "tables" / "spatial_w_audit.json", {"weights": [{"w_name": "W", "row_sum_min": 1.0}]})
+    _write_csv(pack / "tables" / "live_backend_certification_matrix.csv", [{"backend": "stata_xsmle", "status": "ok"}])
+    payload = json.loads((pack / "evidence_pack.json").read_text(encoding="utf-8"))
+    payload["artifacts"].extend(
+        [
+            {
+                "artifact_id": "spatial_impacts",
+                "artifact_type": "spatial_impact_decomposition",
+                "path": "tables/spatial_impact_decomposition.csv",
+                "exists": True,
+                "claimable": True,
+            },
+            {
+                "artifact_id": "spatial_w_metadata",
+                "artifact_type": "spatial_w_metadata",
+                "path": "tables/spatial_w_metadata.json",
+                "exists": True,
+                "claimable": True,
+            },
+            {
+                "artifact_id": "spatial_w_audit",
+                "artifact_type": "spatial_w_audit",
+                "path": "tables/spatial_w_audit.json",
+                "exists": True,
+                "claimable": True,
+            },
+            {
+                "artifact_id": "spatial_backend_status",
+                "artifact_type": "spatial_backend_status",
+                "path": "tables/live_backend_certification_matrix.csv",
+                "exists": True,
+                "claimable": True,
+            },
+        ]
+    )
+    _write_json(pack / "evidence_pack.json", payload)
+    _write_json(pack / "reports" / "internal" / "evidence_pack.json", payload)
+    write_pack_metrics(pack)
+
+    result = run_release_gate(pack_dir=pack, human_eval_path=_human_eval(tmp_path / "human_eval.json"))
+
+    codes = {finding.code for finding in result.findings}
+    assert result.has_hard_blocks is True
+    assert "spatial_impact_decomposition_not_certified" in codes
+
+
 def test_synthetic_or_unknown_provenance_blocks_release(tmp_path: Path) -> None:
     pack = _pack(tmp_path / "pack")
     _write_json(pack / "reports" / "internal" / "run_validation.json", {"version": "v3.0", "data_provenance": "synthetic_fixture"})

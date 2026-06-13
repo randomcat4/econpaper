@@ -2750,6 +2750,155 @@ def live_backend_certification(ctx: RunContext) -> dict[str, Any]:
     )
 
 
+def w3_inference_audit(ctx: RunContext) -> dict[str, Any]:
+    planned = _plan_or_dry(
+        ctx,
+        [
+            "Runs W3 inference contract checks and writes release-gated artifacts.",
+            "Provide one or more of: wcr, conley, romano_wolf, mop_effective_f.",
+        ],
+    )
+    if planned:
+        return planned
+    import pandas as pd
+
+    from .diagnostics.w3_inference import (
+        conley_covariance,
+        null_imposed_wild_cluster_test,
+        romano_wolf_stepdown,
+        validate_mop_effective_f_artifact,
+    )
+
+    tables = ctx.artifact("tables")
+    tables.mkdir(parents=True, exist_ok=True)
+    results: dict[str, Any] = {}
+    warnings: list[dict[str, Any]] = []
+    model_rows: list[dict[str, Any]] = []
+
+    wcr_spec = ctx.spec.get("wcr") if isinstance(ctx.spec.get("wcr"), dict) else {}
+    if wcr_spec:
+        result = null_imposed_wild_cluster_test(
+            wcr_spec.get("y"),
+            wcr_spec.get("X"),
+            wcr_spec.get("clusters"),
+            wcr_spec.get("R"),
+            wcr_spec.get("q"),
+            B=int(wcr_spec.get("B", ctx.spec.get("B", 999))),
+            seed=int(wcr_spec.get("seed", ctx.spec.get("seed", 20260613))),
+            weight_scheme=str(wcr_spec.get("weight_scheme", "rademacher")),
+        )
+        results["wcr"] = result
+        write_json(ctx.artifact("w3_null_imposed_wcr.json"), result)
+        if result.get("status") == "ok":
+            model_rows.append(
+                {
+                    "term": "null_imposed_wcr_F",
+                    "coef": result.get("F_obs"),
+                    "p_value": result.get("p_value"),
+                    "model": "w3_null_imposed_wcr",
+                    "status": result.get("status"),
+                }
+            )
+
+    conley_spec = ctx.spec.get("conley") if isinstance(ctx.spec.get("conley"), dict) else {}
+    if conley_spec:
+        result = conley_covariance(
+            conley_spec.get("X"),
+            conley_spec.get("y"),
+            conley_spec.get("lon"),
+            conley_spec.get("lat"),
+            time=conley_spec.get("time"),
+            theta_km=float(conley_spec.get("theta_km")),
+            time_bandwidth=conley_spec.get("time_bandwidth"),
+            spatial_kernel=str(conley_spec.get("spatial_kernel", "triangular")),
+            time_kernel=str(conley_spec.get("time_kernel", "bartlett")),
+            terms=conley_spec.get("terms"),
+        )
+        results["conley"] = result
+        write_json(ctx.artifact("w3_conley_full.json"), result)
+        rows = result.get("rows") if isinstance(result.get("rows"), list) else []
+        if rows:
+            pd.DataFrame(rows).to_csv(tables / "w3_conley_full.csv", index=False, encoding="utf-8-sig")
+            model_rows.extend(rows)
+
+    rw_spec = ctx.spec.get("romano_wolf") if isinstance(ctx.spec.get("romano_wolf"), dict) else {}
+    if rw_spec:
+        result = romano_wolf_stepdown(
+            rw_spec.get("stat_vector"),
+            rw_spec.get("bootstrap_draws"),
+            labels=rw_spec.get("labels"),
+            alpha=float(rw_spec.get("alpha", 0.05)),
+            family_id=str(rw_spec.get("family_id", "family")),
+        )
+        results["romano_wolf"] = result
+        write_json(ctx.artifact("w3_romano_wolf.json"), result)
+        rows = result.get("rows") if isinstance(result.get("rows"), list) else []
+        if rows:
+            pd.DataFrame(rows).to_csv(tables / "w3_romano_wolf.csv", index=False, encoding="utf-8-sig")
+
+    mop_spec = ctx.spec.get("mop_effective_f") if isinstance(ctx.spec.get("mop_effective_f"), dict) else {}
+    if mop_spec:
+        result = validate_mop_effective_f_artifact(
+            effective_f=mop_spec.get("effective_f"),
+            critical_value=mop_spec.get("critical_value"),
+            estimator=str(mop_spec.get("estimator", "TSLS")),
+            tau=float(mop_spec.get("tau", 0.10)),
+            source_backend=mop_spec.get("source_backend"),
+        )
+        results["mop_effective_f"] = result
+        write_json(ctx.artifact("w3_mop_effective_f.json"), result)
+        pd.DataFrame(
+            [
+                {
+                    "effective_f": result.get("effective_f"),
+                    "critical_value": result.get("critical_value"),
+                    "weak_iv_flag": result.get("weak_iv_flag"),
+                    "mop_effective_f_certified": result.get("mop_effective_f_certified"),
+                    "status": result.get("status"),
+                }
+            ]
+        ).to_csv(tables / "w3_mop_effective_f.csv", index=False, encoding="utf-8-sig")
+        if result.get("status") == "ok":
+            model_rows.append(
+                {
+                    "term": "mop_effective_f",
+                    "coef": result.get("effective_f"),
+                    "model": "w3_mop_effective_f",
+                    "status": result.get("status"),
+                }
+            )
+
+    if not results:
+        raise Skill4EconError("w3_inference_audit requires at least one W3 spec block.")
+    for name, result in results.items():
+        if result.get("status") != "ok":
+            warnings.append(
+                {
+                    "severity": "red",
+                    "code": str(result.get("error_code") or f"{name.upper()}_NOT_CERTIFIED"),
+                    "message": str(result.get("message") or f"{name} did not produce a certified W3 artifact."),
+                    "action": "Do not use this W3 artifact for release claims until the contract returns status=ok.",
+                }
+            )
+    if model_rows:
+        write_model_table(ctx, model_rows)
+    write_json(ctx.artifact("w3_inference_audit.json"), {"status": "ok", "results": results, "warnings": warnings})
+    status = "ok" if any(result.get("status") == "ok" for result in results.values()) else "failed"
+    write_audit(ctx, status, ["W3 inference audit completed."], warnings=warnings)
+    return write_manifest(
+        ctx,
+        status,
+        estimator="W3 inference artifact audit",
+        claim_level="diagnostic",
+        paper_readiness="supplementary_only" if status == "ok" else "not_available",
+        main_claim_available=False,
+        estimand_scope="w3_inference_artifacts",
+        not_valid_for=["release claims unless the specific W3 artifact status is ok and EvidencePack gate passes"],
+        warnings=warnings,
+        w3_results=results,
+    )
+
+
 def flagship_slow_matrix(ctx: RunContext) -> dict[str, Any]:
     planned = _plan_or_dry(
         ctx,
@@ -3049,6 +3198,7 @@ PYTHON_METHODS = {
     "spatial_se_comparison": spatial_se_comparison,
     "spatial_w_sensitivity": spatial_w_sensitivity,
     "live_backend_certification": live_backend_certification,
+    "w3_inference_audit": w3_inference_audit,
     "flagship_slow_matrix": flagship_slow_matrix,
     "ml_prediction_audit": ml_prediction_audit,
     "plot_diagnostics": plot_diagnostics,

@@ -23,6 +23,15 @@ KNOWN_ARTIFACT_TYPES = {
     "rdd_diagnostics",
     "rdd_density_test",
     "covariate_continuity",
+    "spatial_impact_decomposition",
+    "spatial_model_coefficients",
+    "spatial_w_metadata",
+    "spatial_w_audit",
+    "spatial_backend_status",
+    "w3_null_imposed_wcr",
+    "w3_effective_f",
+    "w3_conley",
+    "w3_romano_wolf",
     "diagnostic",
     "figure",
     "table",
@@ -48,6 +57,20 @@ TYPE_ALIASES = {
     "density_test": "rdd_density_test",
     "manipulation_test": "rdd_density_test",
     "covariate_balance": "covariate_continuity",
+    "spatial_impacts": "spatial_impact_decomposition",
+    "spatial_impact": "spatial_impact_decomposition",
+    "sdm_impacts": "spatial_impact_decomposition",
+    "spatial_coefficients": "spatial_model_coefficients",
+    "spatial_coef": "spatial_model_coefficients",
+    "w_metadata": "spatial_w_metadata",
+    "w_audit": "spatial_w_audit",
+    "spatial_backend": "spatial_backend_status",
+    "null_imposed_wcr": "w3_null_imposed_wcr",
+    "wild_cluster_randomization": "w3_null_imposed_wcr",
+    "mop_effective_f": "w3_effective_f",
+    "effective_f": "w3_effective_f",
+    "conley_full": "w3_conley",
+    "romano_wolf": "w3_romano_wolf",
 }
 EVIDENCE_ITEM_REQUIRED = {
     "evidence_id",
@@ -390,6 +413,35 @@ def normalize_artifact_type(raw_type: Any, path: Any = "", role: Any = "") -> st
         return "rdd_density_test"
     if "covariate_continuity" in text:
         return "covariate_continuity"
+    if (
+        "spatial_impact_decomposition" in text
+        or "spatialreg_live_impacts" in text
+        or "spxtregress_live_impacts" in text
+        or "xsmle_live_impacts" in text
+        or ("xsmle" in text and "impacts" in text)
+    ):
+        return "spatial_impact_decomposition"
+    if (
+        "spatial_model_coefficients" in text
+        or "spatialreg_live_coefficients" in text
+        or ("spxtregress" in text and "coefficients" in text)
+        or ("xsmle" in text and "coefficients" in text)
+    ):
+        return "spatial_model_coefficients"
+    if "w_metadata" in text:
+        return "spatial_w_metadata"
+    if "w_audit" in text or "spatial_w_audit" in text:
+        return "spatial_w_audit"
+    if "spatial_backend_status" in text or "live_backend_certification_matrix" in text:
+        return "spatial_backend_status"
+    if "null_imposed_wcr" in text or "wild_cluster_randomization" in text:
+        return "w3_null_imposed_wcr"
+    if "mop_effective_f" in text or "effective_f" in text:
+        return "w3_effective_f"
+    if "conley" in text and ("full" in text or "covariance" in text):
+        return "w3_conley"
+    if "romano_wolf" in text or "romano-wolf" in text:
+        return "w3_romano_wolf"
     if cleaned in {"diagnostic", "metadata", "table", "figure"}:
         return cleaned
     if cleaned in KNOWN_ARTIFACT_TYPES:

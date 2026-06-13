@@ -82,9 +82,54 @@ def test_stata_command_probe_uses_matching_log_name_and_timeout(monkeypatch, tmp
     result = live_cert._stata_command_available({"xsmle_probe_timeout": 123}, tmp_path, "xsmle")
 
     assert captured["name"] == "which_xsmle"
-    assert 'log using "which_xsmle.log"' in str(captured["do_text"])
+    assert 'capture which xsmle' in str(captured["do_text"])
+    assert "log using" not in str(captured["do_text"])
     assert captured["timeout"] == 123
     assert result["command_name"] == "xsmle"
+
+
+def test_run_stata_do_passes_absolute_do_file_when_output_dir_is_relative(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(live_cert, "resolve_stata", lambda spec: (Path("D:/stata17/StataMP-64.exe"), "test"))
+    monkeypatch.setattr(live_cert, "resolve_stata_batch_args", lambda executable, spec: ["/e", "do"])
+
+    class FakeProc:
+        returncode = 0
+
+    def fake_run(cmd, *, cwd, stdout, stderr, text, timeout, check):
+        captured.update({"cmd": cmd, "cwd": cwd, "timeout": timeout})
+        return FakeProc()
+
+    monkeypatch.setattr(live_cert.subprocess, "run", fake_run)
+
+    result = live_cert._run_stata_do({}, Path("relative_out"), name="probe", do_text="exit\n", timeout=7)
+
+    assert result["status"] == "ok"
+    assert Path(captured["cmd"][-1]).is_absolute()
+    assert Path(captured["cwd"]).is_absolute()
+    assert captured["timeout"] == 7
+
+
+def test_parse_xsmle_impact_csv_requires_uncertainty(tmp_path: Path) -> None:
+    impact_path = tmp_path / "xsmle_impacts.csv"
+    impact_path.write_text(
+        "\n".join(
+            [
+                "effect,direct,indirect,total,direct_std_error,indirect_std_error,total_std_error,direct_p_value,indirect_p_value,total_p_value",
+                "x1,0.1,0.2,0.3,0.01,0.02,0.03,0.04,0.05,0.06",
+                "x2,0.1,0.2,0.3,,,,,,",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rows = live_cert.parse_xsmle_impact_csv(impact_path, model="SDM", w_name="W")
+
+    assert len(rows) == 1
+    assert rows[0]["backend"] == "stata_xsmle"
+    assert rows[0]["effect"] == "x1"
+    assert rows[0]["direct_p_value"] == 0.04
 
 
 def test_spdep_lisa_missing_rscript_is_missing_dependency(monkeypatch, tmp_path: Path) -> None:

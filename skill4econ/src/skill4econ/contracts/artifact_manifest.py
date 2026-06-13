@@ -36,6 +36,15 @@ ECONPAPER_EVIDENCE_TYPES = {
     "rdd_diagnostics",
     "rdd_density_test",
     "covariate_continuity",
+    "spatial_impact_decomposition",
+    "spatial_model_coefficients",
+    "spatial_w_metadata",
+    "spatial_w_audit",
+    "spatial_backend_status",
+    "w3_null_imposed_wcr",
+    "w3_effective_f",
+    "w3_conley",
+    "w3_romano_wolf",
 }
 
 
@@ -114,6 +123,35 @@ def infer_econpaper_evidence_type(path: Path, role: str = "", workflow: str = ""
         return "rdd_density_test"
     if name in {"covariate_continuity.json", "covariate_continuity.csv"}:
         return "covariate_continuity"
+    if (
+        "spatial_impact_decomposition" in text
+        or "spatialreg_live_impacts" in text
+        or "spxtregress_live_impacts" in text
+        or "xsmle_live_impacts" in text
+        or ("xsmle" in text and "impacts" in text)
+    ):
+        return "spatial_impact_decomposition"
+    if (
+        "spatial_model_coefficients" in text
+        or "spatialreg_live_coefficients" in text
+        or ("spxtregress" in text and "coefficients" in text)
+        or ("xsmle" in text and "coefficients" in text)
+    ):
+        return "spatial_model_coefficients"
+    if "w_metadata" in text:
+        return "spatial_w_metadata"
+    if "w_audit" in text or "spatial_w_audit" in text:
+        return "spatial_w_audit"
+    if "spatial_backend_status" in text or "live_backend_certification_matrix" in text:
+        return "spatial_backend_status"
+    if "null_imposed_wcr" in text or "wild_cluster_randomization" in text:
+        return "w3_null_imposed_wcr"
+    if "mop_effective_f" in text or "effective_f" in text:
+        return "w3_effective_f"
+    if "conley" in text and ("full" in text or "covariance" in text):
+        return "w3_conley"
+    if "romano_wolf" in text or "romano-wolf" in text:
+        return "w3_romano_wolf"
     return None
 
 

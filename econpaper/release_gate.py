@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -74,6 +75,7 @@ def run_release_gate(*, pack_dir: str | Path, human_eval_path: str | Path | None
         return result
     _check_author_report(pack, result)
     _check_claim_ledger(pack, result)
+    _check_evidence_pack_inference_contract(pack, result)
     _check_global_coherence(pack, result)
     _check_sections(pack, result)
     _check_tier_metrics(pack, result)
@@ -116,6 +118,172 @@ def _check_claim_ledger(pack: Path, result: ReleaseGateResult) -> None:
             path=str(ledger_path),
             details={"hard_blocks": hard_blocks, "hard_claim_count": len(hard_claims)},
         )
+
+
+def _check_evidence_pack_inference_contract(pack: Path, result: ReleaseGateResult) -> None:
+    pack_path = pack / "evidence_pack.json"
+    if not pack_path.exists():
+        return
+    payload = _load_json(pack_path, result, "evidence_pack")
+    artifacts = payload.get("artifacts") if isinstance(payload.get("artifacts"), list) else []
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        artifact_type = str(artifact.get("artifact_type") or artifact.get("evidence_type") or "")
+        if not artifact_type:
+            continue
+        by_type.setdefault(artifact_type, []).append(artifact)
+
+    if by_type.get("spatial_impact_decomposition"):
+        required = {
+            "spatial_w_metadata": "spatial_impacts_missing_w_metadata",
+            "spatial_w_audit": "spatial_impacts_missing_w_audit",
+            "spatial_backend_status": "spatial_impacts_missing_backend_status",
+        }
+        for artifact_type, code in required.items():
+            if not by_type.get(artifact_type):
+                result.add_finding(
+                    code,
+                    "hard_block",
+                    "Release-level spatial impact decomposition requires live backend status plus W metadata and W audit artifacts.",
+                    path=str(pack_path),
+                    details={"missing_artifact_type": artifact_type},
+                )
+        for artifact in by_type.get("spatial_impact_decomposition", []):
+            rel = str(artifact.get("path") or "")
+            path = pack / rel
+            if not path.exists():
+                result.add_finding(
+                    "spatial_impact_artifact_missing",
+                    "hard_block",
+                    "Spatial impact decomposition artifact is declared but missing from the pack.",
+                    path=rel,
+                )
+                continue
+            if not _valid_spatial_impact_decomposition(path):
+                result.add_finding(
+                    "spatial_impact_decomposition_not_certified",
+                    "hard_block",
+                    "Spatial impact decomposition must include finite direct, indirect, total effects with uncertainty.",
+                    path=rel,
+                )
+
+    validators = {
+        "w3_null_imposed_wcr": _valid_w3_null_imposed_wcr,
+        "w3_effective_f": _valid_w3_effective_f,
+        "w3_conley": _valid_w3_conley,
+        "w3_romano_wolf": _valid_w3_romano_wolf,
+    }
+    for artifact_type, validator in validators.items():
+        for artifact in by_type.get(artifact_type, []):
+            rel = str(artifact.get("path") or "")
+            path = pack / rel
+            if not path.exists():
+                result.add_finding(
+                    f"{artifact_type}_artifact_missing",
+                    "hard_block",
+                    f"{artifact_type} artifact is declared but missing from the pack.",
+                    path=rel,
+                )
+                continue
+            if not validator(path):
+                result.add_finding(
+                    f"{artifact_type}_not_certified",
+                    "hard_block",
+                    f"{artifact_type} artifact is present but does not satisfy the release certification contract.",
+                    path=rel,
+                )
+
+
+def _valid_w3_null_imposed_wcr(path: Path) -> bool:
+    payload = _load_table_or_json(path)
+    rows = payload if isinstance(payload, list) else [payload] if isinstance(payload, dict) else []
+    return any(
+        _truthy(row.get("null_imposed")) and str(row.get("status") or "ok") == "ok" and _as_float(row.get("p_value")) is not None
+        for row in rows
+        if isinstance(row, dict)
+    )
+
+
+def _valid_spatial_impact_decomposition(path: Path) -> bool:
+    payload = _load_table_or_json(path)
+    rows = payload.get("rows") if isinstance(payload, dict) and isinstance(payload.get("rows"), list) else payload
+    rows = rows if isinstance(rows, list) else [payload] if isinstance(payload, dict) else []
+    required = [
+        "direct",
+        "indirect",
+        "total",
+        "direct_std_error",
+        "indirect_std_error",
+        "total_std_error",
+        "direct_p_value",
+        "indirect_p_value",
+        "total_p_value",
+    ]
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if not str(row.get("effect") or row.get("term") or "").strip():
+            continue
+        values = [_as_float(row.get(key)) for key in required]
+        if all(value is not None and math.isfinite(value) for value in values):
+            return True
+    return False
+
+
+def _valid_w3_effective_f(path: Path) -> bool:
+    payload = _load_table_or_json(path)
+    rows = payload if isinstance(payload, list) else [payload] if isinstance(payload, dict) else []
+    return any(
+        _truthy(row.get("mop_effective_f_certified")) and _as_float(row.get("effective_f")) is not None and _as_float(row.get("critical_value")) is not None
+        for row in rows
+        if isinstance(row, dict)
+    )
+
+
+def _valid_w3_conley(path: Path) -> bool:
+    payload = _load_table_or_json(path)
+    rows = payload if isinstance(payload, list) else [payload] if isinstance(payload, dict) else []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if _truthy(row.get("is_full_conley")):
+            return True
+        if str(row.get("se_type") or "").strip().lower() == "conley_full":
+            return True
+    return False
+
+
+def _valid_w3_romano_wolf(path: Path) -> bool:
+    payload = _load_table_or_json(path)
+    rows = payload.get("rows") if isinstance(payload, dict) and isinstance(payload.get("rows"), list) else payload
+    rows = rows if isinstance(rows, list) else [payload] if isinstance(payload, dict) else []
+    return any(
+        _as_float(row.get("p_adj")) is not None and _as_float(row.get("p_raw")) is not None
+        for row in rows
+        if isinstance(row, dict)
+    )
+
+
+def _load_table_or_json(path: Path) -> Any:
+    try:
+        if path.suffix.lower() == ".json":
+            return json.loads(path.read_text(encoding="utf-8-sig"))
+        if path.suffix.lower() == ".csv":
+            import csv
+
+            with path.open("r", newline="", encoding="utf-8-sig") as handle:
+                return [dict(row) for row in csv.DictReader(handle)]
+    except Exception:
+        return None
+    return None
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "ok"}
 
 
 def _check_global_coherence(pack: Path, result: ReleaseGateResult) -> None:
@@ -279,9 +447,10 @@ def _load_json(path: Path, result: ReleaseGateResult, label: str) -> dict[str, A
 
 def _as_float(value: Any) -> float | None:
     try:
-        return float(value)
+        parsed = float(value)
     except Exception:
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _author_report_text(result: ReleaseGateResult) -> str:

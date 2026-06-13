@@ -1,6 +1,6 @@
 [project]
 name = "econpaper"
-version = "0.1.0"
+version = "1.0.0"
 description = "Economics and finance manuscript safety, linter, and draft-package tooling."
 requires-python = ">=3.11"
 

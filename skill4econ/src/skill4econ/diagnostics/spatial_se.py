@@ -64,9 +64,9 @@ def _spatial_hac_rows(design: Any, y_col: str, terms: list[str], keep_terms: lis
                     "std_error": float(se),
                     "p_value": _normal_pvalue(t_stat),
                     "t_stat": t_stat,
-                    "se_type": "conley_bartlett_distance",
+                    "se_type": "spatial_hac_bartlett_cutoff",
                     "kernel": "bartlett_distance",
-                    "is_full_conley": True,
+                    "is_full_conley": False,
                     "cutoff_km": float(cutoff),
                 }
             )
@@ -81,7 +81,7 @@ def _plot_cutoffs(rows: list[dict[str, Any]], path: Path) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     plt.figure(figsize=(7, 4))
-    plottable = [row for row in rows if row.get("se_type") == "conley_bartlett_distance"]
+    plottable = [row for row in rows if row.get("se_type") == "spatial_hac_bartlett_cutoff"]
     if not plottable:
         plt.text(0.5, 0.5, "No spatial SE estimates", ha="center", va="center")
         plt.axis("off")
@@ -89,7 +89,8 @@ def _plot_cutoffs(rows: list[dict[str, Any]], path: Path) -> None:
         for term in sorted({row["term"] for row in plottable}):
             subset = [row for row in plottable if row["term"] == term]
             subset.sort(key=lambda row: float(row["cutoff_km"]))
-            plt.plot([row["cutoff_km"] for row in subset], [row["std_error"] for row in subset], marker="o", label=term)
+            label = term.lstrip("_") or term
+            plt.plot([row["cutoff_km"] for row in subset], [row["std_error"] for row in subset], marker="o", label=label)
         plt.xlabel("Distance cutoff (km)")
         plt.ylabel("Spatial HAC standard error")
         plt.legend()
@@ -140,14 +141,24 @@ def run_spatial_se_comparison(df: Any, edge_list: str | Path, spec: dict[str, An
         design_with_coords = design.join(panel.loc[design.index, [lon_col, lat_col]])
         rows.extend(_spatial_hac_rows(design_with_coords, y_col, terms, keep_terms, id_col, lon_col, lat_col, cutoffs))
 
+    if any(row.get("se_type") == "spatial_hac_bartlett_cutoff" for row in rows):
+        warnings.append(
+            {
+                "severity": "yellow",
+                "code": "SPATIAL_SE_SENSITIVITY_ONLY",
+                "message": "Distance-cutoff Bartlett spatial HAC was computed as a sensitivity comparison, not a certified full Conley spatial-panel covariance.",
+                "action": "Use a full Conley covariance artifact before claiming full spatially robust inference.",
+            }
+        )
+
     pd.DataFrame(rows).to_csv(tables / "spatial_se_comparison.csv", index=False, encoding="utf-8-sig")
     _plot_cutoffs(rows, figures / "spatial_se_cutoff_sensitivity.png")
     payload = {
-        "status": "ok" if any(row.get("se_type") == "conley_bartlett_distance" for row in rows) else "skipped_no_coordinates",
+        "status": "ok" if any(row.get("se_type") == "spatial_hac_bartlett_cutoff" for row in rows) else "skipped_no_coordinates",
         "claim_level": "sensitivity_only",
         "paper_readiness": "supplementary_only",
         "main_claim_available": False,
-        "is_full_conley": any(row.get("se_type") == "conley_bartlett_distance" for row in rows),
+        "is_full_conley": False,
         "is_full_spatial_panel_inference": False,
         "cutoffs_km": cutoffs,
         "warnings": warnings,

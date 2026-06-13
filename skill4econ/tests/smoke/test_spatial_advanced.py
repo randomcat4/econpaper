@@ -103,12 +103,13 @@ def test_spatial_se_comparison_outputs_cutoff_grid(tmp_path: Path) -> None:
     result = run_spatial_se_comparison(panel, spec["weights"], spec, tmp_path / "se")
     assert result["status"] == "ok"
     assert "SPATIAL_HAC_UNIFORM_KERNEL" not in _codes(result)
-    assert result["is_full_conley"] is True
+    assert "SPATIAL_SE_SENSITIVITY_ONLY" in _codes(result)
+    assert result["is_full_conley"] is False
     table = pd.read_csv(tmp_path / "se" / "tables" / "spatial_se_comparison.csv")
-    assert {"conley_bartlett_distance", "cluster:city:numpy"} & set(table["se_type"].astype(str))
-    hac_rows = table[table["se_type"].astype(str) == "conley_bartlett_distance"]
+    assert {"spatial_hac_bartlett_cutoff", "cluster:city:numpy"} & set(table["se_type"].astype(str))
+    hac_rows = table[table["se_type"].astype(str) == "spatial_hac_bartlett_cutoff"]
     assert set(hac_rows["kernel"].astype(str)) == {"bartlett_distance"}
-    assert hac_rows["is_full_conley"].astype(bool).all()
+    assert not hac_rows["is_full_conley"].astype(bool).any()
     assert (tmp_path / "se" / "figures" / "spatial_se_cutoff_sensitivity.png").exists()
 
 

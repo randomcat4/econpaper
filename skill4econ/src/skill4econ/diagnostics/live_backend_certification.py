@@ -12,6 +12,8 @@ from typing import Any
 from ..adapters.heavy_backend_contract import (
     canonical_backend_result,
     probe_r_backend,
+    rscript_command,
+    run_backend_command,
     validate_spatial_impacts_table,
     write_canonical_backend_result,
 )
@@ -19,6 +21,45 @@ from ..config import resolve_stata, resolve_stata_batch_args
 from ..contracts.stata_safety import validate_stata_spec
 from ..core import REPO_ROOT, listify
 from ..stata_wrappers import _vendor_adopath_block
+
+
+SPATIAL_IMPACT_FIELDNAMES = [
+    "backend",
+    "model",
+    "w_name",
+    "effect",
+    "direct",
+    "indirect",
+    "total",
+    "direct_std_error",
+    "indirect_std_error",
+    "total_std_error",
+    "direct_z_stat",
+    "indirect_z_stat",
+    "total_z_stat",
+    "direct_p_value",
+    "indirect_p_value",
+    "total_p_value",
+]
+
+
+XSMLE_MATRIX_FIELDNAMES = [
+    "backend",
+    "model",
+    "w_name",
+    "w_options",
+    "model_options",
+    "status",
+    "returncode",
+    "has_coefficients",
+    "has_impact_decomposition",
+    "coefficient_path",
+    "impact_path",
+    "w_audit_path",
+    "stata_log",
+    "error_code",
+    "message",
+]
 
 
 def _as_path(value: Any, base: Path) -> Path:
@@ -127,6 +168,7 @@ def _run_stata_do(
     do_text: str,
     timeout: int,
 ) -> dict[str, Any]:
+    output_dir = output_dir.resolve()
     executable, source = resolve_stata(spec)
     scripts = output_dir / "scripts"
     logs = output_dir / "logs"
@@ -146,7 +188,7 @@ def _run_stata_do(
             message="Stata executable is not available.",
             extra={"stata_source": source, "do_file": str(do_path)},
         )
-    cmd = [str(executable), *resolve_stata_batch_args(executable, spec), str(do_path)]
+    cmd = [str(executable), *resolve_stata_batch_args(executable, spec), str(do_path.resolve())]
     try:
         with stdout_path.open("w", encoding="utf-8", errors="replace") as out, stderr_path.open(
             "w", encoding="utf-8", errors="replace"
@@ -196,11 +238,9 @@ def _stata_command_available(spec: dict[str, Any], output_dir: Path, command: st
 version 17
 set more off
 {_vendor_adopath_block()}
-log using "{probe_name}.log", replace text
 capture which {command}
 local rc = _rc
 display "{command}_rc=" `rc'
-log close
 exit `rc'
 """
     result = _run_stata_do(spec, output_dir, name=probe_name, do_text=do_text, timeout=timeout)
@@ -264,6 +304,294 @@ def parse_estat_impact_log(log_text: str, variables: list[str], *, model: str, w
         }
         rows.append(row)
     return rows
+
+
+def _read_csv_dicts(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    with path.open("r", newline="", encoding="utf-8-sig") as handle:
+        return [dict(row) for row in csv.DictReader(handle)]
+
+
+def _finite_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _safe_file_stem(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_]+", "_", value).strip("_").lower()
+    return cleaned or "run"
+
+
+def _stata_identifier(value: str, *, kind: str) -> str:
+    text = str(value).strip()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,31}", text):
+        raise ValueError(f"{kind} must be a valid Stata identifier: {value!r}")
+    return text
+
+
+def _xsmle_w_spec(w_spec: dict[str, Any]) -> dict[str, Any]:
+    name = _stata_identifier(str(w_spec.get("name") or "W_row"), kind="xsmle weight matrix name")
+    options = str(w_spec.get("options") or "normalize(row)").strip()
+    method = str(w_spec.get("method") or w_spec.get("kind") or "inverse_distance").strip().lower()
+    if method not in {"inverse_distance", "idistance"}:
+        raise ValueError("xsmle live certification currently supports inverse_distance/idistance W only.")
+    norm_match = re.search(r"normalize\(([^)]+)\)", options, flags=re.IGNORECASE)
+    normalization = str(w_spec.get("normalization") or (norm_match.group(1) if norm_match else "row")).strip().lower()
+    if normalization not in {"row", "minmax", "none"}:
+        raise ValueError("xsmle W normalization must be row, minmax, or none.")
+    trunc_match = re.search(r"vtruncate\(([^)]+)\)", options, flags=re.IGNORECASE)
+    truncate_below = w_spec.get("truncate_below_weight")
+    if truncate_below is None and trunc_match:
+        truncate_below = trunc_match.group(1)
+    truncate_value: float | None = None
+    if truncate_below not in {None, ""}:
+        truncate_value = _finite_float(truncate_below)
+        if truncate_value is None or truncate_value < 0:
+            raise ValueError("xsmle truncate_below_weight/vtruncate must be a non-negative number.")
+    return {
+        "name": name,
+        "options": options,
+        "method": method,
+        "normalization": normalization,
+        "truncate_below_weight": truncate_value,
+    }
+
+
+def _xsmle_model_options(model: str, w_name: str, spec: dict[str, Any]) -> str:
+    model_lower = model.lower()
+    if model_lower not in {"sar", "sdm"}:
+        raise ValueError("xsmle live impact certification supports SAR and SDM models only.")
+    dynamic = str(spec.get("xsmle_dlag") or spec.get("dlag") or "no").strip().lower()
+    if dynamic not in {"", "0", "no", "none", "false"}:
+        raise ValueError("xsmle dynamic dlag models are not live-certified by this adapter yet.")
+    panel_effect = str(spec.get("xsmle_panel_effect") or spec.get("spatial_effects") or "fe").strip().lower()
+    if panel_effect not in {"fe", "re"}:
+        raise ValueError("xsmle_panel_effect/spatial_effects must be 'fe' or 're'.")
+    fe_type = str(spec.get("xsmle_fe_type") or "ind").strip().lower()
+    if fe_type not in {"ind", "time", "both"}:
+        raise ValueError("xsmle_fe_type must be ind, time, or both.")
+    vce = str(spec.get("xsmle_vce") or "oim").strip()
+    vceeffects = str(spec.get("xsmle_vceeffects") or "dm").strip().lower()
+    if vceeffects in {"none", "no", "false"}:
+        raise ValueError("xsmle live certification requires effect standard errors; vceeffects(none) is not allowed.")
+    extras = [str(item).strip() for item in listify(spec.get("xsmle_extra_options") or []) if str(item).strip()]
+    type_option = f" type({fe_type})" if panel_effect == "fe" else ""
+    suffix = " ".join(extras)
+    suffix = f" {suffix}" if suffix else ""
+    return f"model({model_lower}) wmat({w_name}) {panel_effect}{type_option} effects vce({vce}) vceeffects({vceeffects}){suffix}"
+
+
+def _xsmle_w_builder_block(
+    *,
+    w_name: str,
+    w_options: dict[str, Any],
+    audit_csv: Path,
+    id_col: str,
+    time_col: str,
+    lon: str,
+    lat: str,
+) -> str:
+    truncate_value = "." if w_options.get("truncate_below_weight") is None else str(w_options["truncate_below_weight"])
+    normalization = str(w_options["normalization"])
+    method = str(w_options["method"])
+    option_text = str(w_options["options"]).replace('"', "'")
+    return f"""
+quietly summarize {time_col}, meanonly
+local __s4e_first_time = r(min)
+preserve
+keep if {time_col} == `__s4e_first_time'
+sort {id_col}
+mata:
+X = st_data(., ("{lon}", "{lat}"))
+n = rows(X)
+W = J(n,n,0)
+for (i=1; i<=n; i++) {{
+    for (j=1; j<=n; j++) {{
+        if (i != j) {{
+            d = sqrt((X[i,1]-X[j,1])^2 + (X[i,2]-X[j,2])^2)
+            if (d > 0) W[i,j] = 1/d
+        }}
+    }}
+}}
+truncate_below = {truncate_value}
+if (truncate_below < .) W = W :* (W :>= truncate_below)
+if ("{normalization}" == "row") {{
+    row_sums = rowsum(W)
+    for (i=1; i<=n; i++) {{
+        if (row_sums[i] > 0) W[i,.] = W[i,.] / row_sums[i]
+    }}
+}}
+else if ("{normalization}" == "minmax") {{
+    row_sums = rowsum(W)
+    col_sums = rowsum(W')
+    scale = min((max(row_sums), max(col_sums)))
+    if (scale > 0) W = W / scale
+}}
+row_sums = rowsum(W)
+W_vec = vec(W)
+positive = select(W_vec, W_vec:>0)
+st_matrix("{w_name}", W)
+st_numscalar("__s4e_w_n", n)
+st_numscalar("__s4e_w_nonzero", sum(W:!=0))
+st_numscalar("__s4e_w_min_positive", .)
+if (length(positive) > 0) st_numscalar("__s4e_w_min_positive", min(positive))
+st_numscalar("__s4e_w_max", max(W))
+st_numscalar("__s4e_w_row_sum_min", min(row_sums))
+st_numscalar("__s4e_w_row_sum_max", max(row_sums))
+st_numscalar("__s4e_w_zero_rows", sum(row_sums:==0))
+end
+restore
+preserve
+clear
+set obs 1
+gen str64 w_name = "{w_name}"
+gen str64 method = "{method}"
+gen str64 normalization = "{normalization}"
+gen str128 options = "{option_text}"
+gen double truncate_below_weight = {truncate_value}
+gen double n_units = __s4e_w_n
+gen double nonzero_links = __s4e_w_nonzero
+gen double min_positive_weight = __s4e_w_min_positive
+gen double max_weight = __s4e_w_max
+gen double row_sum_min = __s4e_w_row_sum_min
+gen double row_sum_max = __s4e_w_row_sum_max
+gen double zero_rows = __s4e_w_zero_rows
+gen str64 time_alignment = "first_period"
+export delimited using "{_quote(audit_csv)}", replace
+restore
+"""
+
+
+def _xsmle_impact_export_block(target: Path, covariates: list[str], *, model: str, w_name: str) -> str:
+    covar_list = " ".join(covariates)
+    n_covars = len(covariates)
+    return f"""
+tempname __s4e_b __s4e_V
+matrix `__s4e_b' = e(b)
+matrix `__s4e_V' = e(V)
+local __s4e_eqs : coleq `__s4e_b'
+local __s4e_cols : colnames `__s4e_b'
+local __s4e_k = colsof(`__s4e_b')
+preserve
+clear
+set obs {n_covars}
+gen str64 backend = "stata_xsmle"
+gen str16 model = "{model}"
+gen str64 w_name = "{w_name}"
+gen str128 effect = ""
+gen double direct = .
+gen double indirect = .
+gen double total = .
+gen double direct_std_error = .
+gen double indirect_std_error = .
+gen double total_std_error = .
+gen double direct_z_stat = .
+gen double indirect_z_stat = .
+gen double total_z_stat = .
+gen double direct_p_value = .
+gen double indirect_p_value = .
+gen double total_p_value = .
+local __s4e_covars "{covar_list}"
+forvalues __s4e_r = 1/{n_covars} {{
+    local __s4e_cov : word `__s4e_r' of `__s4e_covars'
+    replace effect = "`__s4e_cov'" in `__s4e_r'
+}}
+forvalues __s4e_j = 1/`__s4e_k' {{
+    local __s4e_eq : word `__s4e_j' of `__s4e_eqs'
+    local __s4e_col : word `__s4e_j' of `__s4e_cols'
+    local __s4e_se = sqrt(`__s4e_V'[`__s4e_j', `__s4e_j'])
+    if inlist("`__s4e_eq'", "LR_Direct", "Direct", "SR_Direct") {{
+        replace direct = `__s4e_b'[1, `__s4e_j'] if effect == "`__s4e_col'"
+        replace direct_std_error = `__s4e_se' if effect == "`__s4e_col'"
+    }}
+    if inlist("`__s4e_eq'", "LR_Indirect", "Indirect", "SR_Indirect") {{
+        replace indirect = `__s4e_b'[1, `__s4e_j'] if effect == "`__s4e_col'"
+        replace indirect_std_error = `__s4e_se' if effect == "`__s4e_col'"
+    }}
+    if inlist("`__s4e_eq'", "LR_Total", "Total", "SR_Total") {{
+        replace total = `__s4e_b'[1, `__s4e_j'] if effect == "`__s4e_col'"
+        replace total_std_error = `__s4e_se' if effect == "`__s4e_col'"
+    }}
+}}
+replace direct_z_stat = direct / direct_std_error if direct_std_error > 0
+replace indirect_z_stat = indirect / indirect_std_error if indirect_std_error > 0
+replace total_z_stat = total / total_std_error if total_std_error > 0
+replace direct_p_value = 2 * normal(-abs(direct_z_stat)) if direct_std_error > 0
+replace indirect_p_value = 2 * normal(-abs(indirect_z_stat)) if indirect_std_error > 0
+replace total_p_value = 2 * normal(-abs(total_z_stat)) if total_std_error > 0
+count if missing(direct) | missing(indirect) | missing(total) | missing(direct_std_error) | missing(indirect_std_error) | missing(total_std_error) | missing(direct_p_value) | missing(indirect_p_value) | missing(total_p_value)
+if r(N) > 0 {{
+    export delimited using "{_quote(target)}", replace
+    restore
+    exit 459
+}}
+export delimited using "{_quote(target)}", replace
+restore
+"""
+
+
+def parse_xsmle_impact_csv(path: Path, *, model: str, w_name: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    required_numeric = [
+        "direct",
+        "indirect",
+        "total",
+        "direct_std_error",
+        "indirect_std_error",
+        "total_std_error",
+        "direct_p_value",
+        "indirect_p_value",
+        "total_p_value",
+    ]
+    for record in _read_csv_dicts(path):
+        effect = str(record.get("effect") or "").strip()
+        if not effect:
+            continue
+        parsed: dict[str, Any] = {
+            "backend": "stata_xsmle",
+            "model": str(record.get("model") or model),
+            "w_name": str(record.get("w_name") or w_name),
+            "effect": effect,
+        }
+        valid = True
+        for key in required_numeric + ["direct_z_stat", "indirect_z_stat", "total_z_stat"]:
+            value = _finite_float(record.get(key))
+            if value is None and key in required_numeric:
+                valid = False
+                break
+            parsed[key] = value
+        if valid:
+            rows.append(parsed)
+    return rows
+
+
+def _write_xsmle_w_jsons(tables: Path, audit_rows: list[dict[str, Any]]) -> tuple[Path, Path]:
+    metadata_path = tables / "stata_xsmle_w_metadata.json"
+    audit_path = tables / "stata_xsmle_w_audit.json"
+    weights = []
+    for row in audit_rows:
+        weights.append(
+            {
+                "w_name": row.get("w_name"),
+                "method": row.get("method"),
+                "normalization": row.get("normalization"),
+                "options": row.get("options"),
+                "truncate_below_weight": row.get("truncate_below_weight"),
+                "n_units": row.get("n_units"),
+                "nonzero_links": row.get("nonzero_links"),
+                "row_sum_min": row.get("row_sum_min"),
+                "row_sum_max": row.get("row_sum_max"),
+                "time_alignment": row.get("time_alignment"),
+                "source": "stata_xsmle_live_impacts",
+            }
+        )
+    _write_json(metadata_path, {"backend": "stata_xsmle", "weights": weights})
+    _write_json(audit_path, {"backend": "stata_xsmle", "weights": audit_rows})
+    return metadata_path, audit_path
 
 
 def _spxtregress_options(model: str, w_name: str, covariates: list[str], spec: dict[str, Any]) -> str:
@@ -403,6 +731,247 @@ exit `model_rc'
     }
 
 
+def run_stata_xsmle_live_impacts(
+    spec: dict[str, Any],
+    output_dir: Path,
+    data_path: Path,
+) -> dict[str, Any]:
+    tables = output_dir / "tables"
+    tables.mkdir(parents=True, exist_ok=True)
+    w_grid = spec.get("xsmle_w_grid") or [
+        {"name": "XW_row", "options": "normalize(row)", "method": "inverse_distance"},
+        {"name": "XW_minmax", "options": "normalize(minmax)", "method": "inverse_distance"},
+    ]
+    models = [str(item).upper() for item in (spec.get("xsmle_models") or ["SAR", "SDM"])]
+    id_col = str(spec.get("id") or "unit_id")
+    time_col = str(spec.get("time") or "year")
+    y = str(spec.get("y") or "y")
+    covariates = [str(item) for item in listify(spec.get("x") or ["x1", "x2"])]
+    lon = str(spec.get("lon") or "lon")
+    lat = str(spec.get("lat") or "lat")
+    matrix_path = tables / "stata_xsmle_live_matrix.csv"
+    impact_path = tables / "stata_xsmle_live_impacts.csv"
+    command_status = _stata_command_available(spec, output_dir, "xsmle")
+    matrix_rows: list[dict[str, Any]] = []
+    impact_rows: list[dict[str, Any]] = []
+    audit_rows: list[dict[str, Any]] = []
+    coef_sources: list[str] = []
+    if command_status.get("status") != "ok":
+        matrix_rows.append(
+            {
+                "backend": "stata_xsmle",
+                "model": "",
+                "w_name": "",
+                "w_options": "",
+                "model_options": "",
+                "status": command_status.get("status"),
+                "returncode": command_status.get("returncode"),
+                "has_coefficients": False,
+                "has_impact_decomposition": False,
+                "coefficient_path": "",
+                "impact_path": "",
+                "w_audit_path": "",
+                "stata_log": command_status.get("stata_log") or "",
+                "error_code": command_status.get("error_code"),
+                "message": command_status.get("message"),
+            }
+        )
+        _write_csv(matrix_path, matrix_rows, XSMLE_MATRIX_FIELDNAMES)
+        _write_csv(impact_path, [], SPATIAL_IMPACT_FIELDNAMES)
+        metadata_path, audit_path = _write_xsmle_w_jsons(tables, [])
+        return {
+            "status": "missing_dependency",
+            "command_status": command_status,
+            "matrix_rows": matrix_rows,
+            "impact_rows": [],
+            "impact_validation": canonical_backend_result(
+                backend="stata_xsmle",
+                status="missing_dependency",
+                available=False,
+                error_code="BACKEND_MISSING_DEPENDENCY",
+                message="xsmle is not available; no live impacts were produced.",
+            ),
+            "coefficient_sources": [],
+            "artifacts": {
+                "matrix": "tables/stata_xsmle_live_matrix.csv",
+                "impacts": "tables/stata_xsmle_live_impacts.csv",
+                "w_metadata": str(metadata_path.relative_to(output_dir)),
+                "w_audit": str(audit_path.relative_to(output_dir)),
+            },
+        }
+
+    for raw_w_spec in w_grid:
+        try:
+            w_spec = _xsmle_w_spec(dict(raw_w_spec))
+        except ValueError as exc:
+            for model in models:
+                safe_name = _safe_file_stem(f"xsmle_invalid_w_{model}")
+                result = canonical_backend_result(
+                    backend="stata_xsmle",
+                    adapter=safe_name,
+                    status="invalid_spec",
+                    available=True,
+                    error_code="INVALID_SPEC",
+                    message=str(exc),
+                )
+                matrix_rows.append(
+                    {
+                        "backend": "stata_xsmle",
+                        "model": model,
+                        "w_name": str(raw_w_spec.get("name") if isinstance(raw_w_spec, dict) else ""),
+                        "w_options": str(raw_w_spec.get("options") if isinstance(raw_w_spec, dict) else ""),
+                        "model_options": "",
+                        "status": "invalid_spec",
+                        "returncode": "",
+                        "has_coefficients": False,
+                        "has_impact_decomposition": False,
+                        "coefficient_path": "",
+                        "impact_path": "",
+                        "w_audit_path": "",
+                        "stata_log": "",
+                        "error_code": "INVALID_SPEC",
+                        "message": str(exc),
+                    }
+                )
+                write_canonical_backend_result(output_dir / "backend_results" / f"{safe_name}.json", result)
+            continue
+        w_name = str(w_spec["name"])
+        w_options_text = str(w_spec["options"])
+        for model in models:
+            safe_name = _safe_file_stem(f"xsmle_{w_name}_{model}")
+            coef_path = tables / f"{safe_name}_coefficients.csv"
+            run_impact_path = tables / f"{safe_name}_impacts.csv"
+            audit_csv = tables / f"{safe_name}_w_audit.csv"
+            try:
+                model_options = _xsmle_model_options(model, w_name, spec)
+            except ValueError as exc:
+                result = canonical_backend_result(
+                    backend="stata_xsmle",
+                    adapter=safe_name,
+                    status="unsupported" if "not live-certified" in str(exc) else "invalid_spec",
+                    available=True,
+                    error_code="UNSUPPORTED_SPEC" if "not live-certified" in str(exc) else "INVALID_SPEC",
+                    message=str(exc),
+                )
+                matrix_rows.append(
+                    {
+                        "backend": "stata_xsmle",
+                        "model": model,
+                        "w_name": w_name,
+                        "w_options": w_options_text,
+                        "model_options": "",
+                        "status": result.get("status"),
+                        "returncode": "",
+                        "has_coefficients": False,
+                        "has_impact_decomposition": False,
+                        "coefficient_path": "",
+                        "impact_path": "",
+                        "w_audit_path": "",
+                        "stata_log": "",
+                        "error_code": result.get("error_code"),
+                        "message": result.get("message"),
+                    }
+                )
+                write_canonical_backend_result(output_dir / "backend_results" / f"{safe_name}.json", result)
+                continue
+            do_text = f"""
+version 17
+set more off
+{_vendor_adopath_block()}
+import delimited using "{_quote(data_path.resolve())}", clear varnames(1)
+xtset {id_col} {time_col}
+{_xsmle_w_builder_block(w_name=w_name, w_options=w_spec, audit_csv=audit_csv.resolve(), id_col=id_col, time_col=time_col, lon=lon, lat=lat)}
+capture noisily xsmle {y} {" ".join(covariates)}, {model_options}
+local model_rc = _rc
+display "skill4econ_model_rc=" `model_rc'
+if `model_rc' == 0 {{
+{_coefficient_export_block(coef_path.resolve())}
+{_xsmle_impact_export_block(run_impact_path.resolve(), covariates, model=model, w_name=w_name)}
+}}
+exit `model_rc'
+"""
+            result = _run_stata_do(spec, output_dir, name=safe_name, do_text=do_text, timeout=int(spec.get("xsmle_timeout", 300)))
+            log_path_value = result.get("stata_log")
+            log_path = Path(str(log_path_value)) if log_path_value else output_dir / f"{safe_name}.log"
+            impacts = parse_xsmle_impact_csv(run_impact_path, model=model, w_name=w_name)
+            validation = validate_spatial_impacts_table(impacts) if impacts else canonical_backend_result(
+                backend="stata_xsmle",
+                status="result_missing",
+                available=True,
+                error_code="SDM_IMPACTS_MISSING",
+                message="xsmle did not export a complete direct/indirect/total impact table.",
+            )
+            has_coef = coef_path.exists()
+            if has_coef:
+                coef_sources.append(str(coef_path))
+            has_audit = audit_csv.exists()
+            if has_audit:
+                audit_rows.extend(_read_csv_dicts(audit_csv))
+            status = str(result.get("status"))
+            if status == "ok" and validation.get("status") != "ok":
+                status = "invalid_result"
+                result["status"] = status
+                result["backend_run_status"] = status
+                result["error_code"] = validation.get("error_code") or "SDM_IMPACTS_MISSING"
+                result["message"] = validation.get("message") or "xsmle impact table failed validation."
+            if status == "ok" and not has_audit:
+                status = "invalid_result"
+                result["status"] = status
+                result["backend_run_status"] = status
+                result["error_code"] = "SPATIAL_W_AUDIT_MISSING"
+                result["message"] = "xsmle ran but W audit metadata was not produced."
+            matrix_rows.append(
+                {
+                    "backend": "stata_xsmle",
+                    "model": model,
+                    "w_name": w_name,
+                    "w_options": w_options_text,
+                    "model_options": model_options,
+                    "status": status,
+                    "returncode": result.get("returncode"),
+                    "has_coefficients": has_coef,
+                    "has_impact_decomposition": bool(impacts),
+                    "coefficient_path": str(coef_path) if has_coef else "",
+                    "impact_path": str(run_impact_path) if impacts else "",
+                    "w_audit_path": str(audit_csv) if has_audit else "",
+                    "stata_log": str(log_path) if log_path.exists() else "",
+                    "error_code": result.get("error_code"),
+                    "message": result.get("message"),
+                }
+            )
+            impact_rows.extend(impacts)
+            result["impact_validation"] = validation
+            result["impact_path"] = str(run_impact_path) if run_impact_path.exists() else None
+            result["coefficient_path"] = str(coef_path) if has_coef else None
+            result["w_audit_path"] = str(audit_csv) if has_audit else None
+            write_canonical_backend_result(output_dir / "backend_results" / f"{safe_name}.json", result)
+    _write_csv(matrix_path, matrix_rows, XSMLE_MATRIX_FIELDNAMES)
+    _write_csv(impact_path, impact_rows, SPATIAL_IMPACT_FIELDNAMES)
+    metadata_path, audit_path = _write_xsmle_w_jsons(tables, audit_rows)
+    impact_validation = validate_spatial_impacts_table(impact_rows) if impact_rows else canonical_backend_result(
+        backend="stata_xsmle",
+        status="result_missing",
+        available=True,
+        error_code="SDM_IMPACTS_MISSING",
+        message="No complete xsmle direct/indirect/total impact rows were produced.",
+    )
+    ok = any(row.get("status") == "ok" and row.get("has_impact_decomposition") for row in matrix_rows)
+    return {
+        "status": "ok" if ok and impact_validation.get("status") == "ok" else "failed",
+        "command_status": command_status,
+        "matrix_rows": matrix_rows,
+        "impact_rows": impact_rows,
+        "impact_validation": impact_validation,
+        "coefficient_sources": coef_sources,
+        "artifacts": {
+            "matrix": "tables/stata_xsmle_live_matrix.csv",
+            "impacts": "tables/stata_xsmle_live_impacts.csv",
+            "w_metadata": "tables/stata_xsmle_w_metadata.json",
+            "w_audit": "tables/stata_xsmle_w_audit.json",
+        },
+    }
+
+
 def run_stata_ppmlhdfe_live_certification(spec: dict[str, Any], output_dir: Path, data_path: Path) -> dict[str, Any]:
     tables = output_dir / "tables"
     id_col = str(spec.get("id") or "unit_id")
@@ -487,6 +1056,262 @@ def run_r_backend_live_probes(spec: dict[str, Any], output_dir: Path) -> dict[st
         write_canonical_backend_result(output_dir / "backend_results" / f"{backend}.json", result)
     _write_csv(output_dir / "tables" / "r_live_backend_probes.csv", rows)
     return {"status": "ok" if any(row["status"] == "ok" for row in rows) else "missing_dependency", "rows": rows, "results": results}
+
+
+def _r_executable_from_spec(spec: dict[str, Any]) -> Any:
+    node = spec.get("r") if isinstance(spec.get("r"), dict) else {}
+    return (
+        spec.get("rscript_command")
+        or spec.get("rscript_executable")
+        or spec.get("rscript")
+        or node.get("rscript_command")
+        or node.get("executable")
+    )
+
+
+def _r_spatialreg_script() -> str:
+    return r'''
+args <- commandArgs(trailingOnly=TRUE)
+data_path <- args[[1]]
+out_dir <- args[[2]]
+y_col <- args[[3]]
+x_cols <- strsplit(args[[4]], ",", fixed=TRUE)[[1]]
+id_col <- args[[5]]
+time_col <- args[[6]]
+lon_col <- args[[7]]
+lat_col <- args[[8]]
+k_neighbors <- as.integer(args[[9]])
+impact_R <- as.integer(args[[10]])
+
+suppressPackageStartupMessages(library(spdep))
+suppressPackageStartupMessages(library(spatialreg))
+
+tables_dir <- file.path(out_dir, "tables")
+dir.create(tables_dir, recursive=TRUE, showWarnings=FALSE)
+d <- read.csv(data_path, stringsAsFactors=FALSE)
+needed <- unique(c(y_col, x_cols, id_col, time_col, lon_col, lat_col))
+missing <- needed[!(needed %in% names(d))]
+if (length(missing) > 0) {
+  stop(paste("missing columns:", paste(missing, collapse=",")))
+}
+if (time_col %in% names(d)) {
+  first_time <- min(d[[time_col]], na.rm=TRUE)
+  d <- d[d[[time_col]] == first_time, , drop=FALSE]
+}
+d <- d[complete.cases(d[, needed, drop=FALSE]), , drop=FALSE]
+d <- d[!duplicated(d[[id_col]]), , drop=FALSE]
+n <- nrow(d)
+if (n < 6) {
+  stop("spatialreg live certification requires at least 6 complete units")
+}
+k_neighbors <- max(1L, min(k_neighbors, n - 1L))
+coords <- as.matrix(d[, c(lon_col, lat_col)])
+nb <- knn2nb(knearneigh(coords, k=k_neighbors))
+lw <- nb2listw(nb, style="W", zero.policy=TRUE)
+w_mat <- listw2mat(lw)
+row_sums <- rowSums(w_mat)
+nonzero <- sum(w_mat != 0)
+components <- n.comp.nb(nb)$nc
+isolates <- which(card(nb) == 0)
+
+metadata_path <- file.path(tables_dir, "r_spatialreg_w_metadata.json")
+audit_path <- file.path(tables_dir, "r_spatialreg_w_audit.json")
+metadata <- sprintf(
+  '{"w_name":"R_knn_W","generator":"spdep_knearneigh_nb2listw","matrix_type":"knn","normalization":"row","k_neighbors":%d,"crs":"coordinate_columns","time_variant":false,"treatment_prepared":true,"allow_self_links":false,"n_units":%d}',
+  k_neighbors, n
+)
+audit <- sprintf(
+  '{"w_name":"R_knn_W","n_units":%d,"nonzero":%d,"sparsity":%.12f,"connected_components":%d,"isolate_count":%d,"row_sums":{"min":%.12f,"max":%.12f,"mean":%.12f},"is_symmetric":%s,"match_panel_order":true,"warnings":[]}',
+  n, nonzero, nonzero / (n * n), components, length(isolates), min(row_sums), max(row_sums), mean(row_sums),
+  ifelse(isTRUE(all.equal(w_mat, t(w_mat))), "true", "false")
+)
+writeLines(metadata, metadata_path, useBytes=TRUE)
+writeLines(audit, audit_path, useBytes=TRUE)
+
+form <- as.formula(paste(y_col, "~", paste(x_cols, collapse=" + ")))
+impact_R <- max(50L, impact_R)
+models <- list(
+  SAR = lagsarlm(form, data=d, listw=lw, method="eigen", zero.policy=TRUE),
+  SDM = lagsarlm(form, data=d, listw=lw, type="mixed", method="eigen", zero.policy=TRUE)
+)
+
+coef_rows <- data.frame()
+impact_rows <- data.frame()
+for (model_name in names(models)) {
+  model <- models[[model_name]]
+  coefs <- coef(summary(model))
+  coef_terms <- rownames(coefs)
+  coef_df <- data.frame(
+    backend="r_spatialreg",
+    model=model_name,
+    w_name="R_knn_W",
+    term=coef_terms,
+    coef=as.numeric(coefs[, 1]),
+    std_error=as.numeric(coefs[, 2]),
+    z_stat=as.numeric(coefs[, 3]),
+    p_value=as.numeric(coefs[, 4]),
+    stringsAsFactors=FALSE
+  )
+  coef_rows <- rbind(coef_rows, coef_df)
+  imp <- impacts(model, listw=lw, R=impact_R, zero.policy=TRUE)
+  si <- summary(imp, zstats=TRUE, short=FALSE)
+  vars <- rownames(si$semat)
+  for (idx in seq_along(vars)) {
+    v <- vars[[idx]]
+    row <- data.frame(
+      backend="r_spatialreg",
+      model=model_name,
+      w_name="R_knn_W",
+      effect=v,
+      direct=as.numeric(si$res$direct[[idx]]),
+      indirect=as.numeric(si$res$indirect[[idx]]),
+      total=as.numeric(si$res$total[[idx]]),
+      direct_std_error=as.numeric(si$semat[idx, "Direct"]),
+      indirect_std_error=as.numeric(si$semat[idx, "Indirect"]),
+      total_std_error=as.numeric(si$semat[idx, "Total"]),
+      direct_z_stat=as.numeric(si$zmat[idx, "Direct"]),
+      indirect_z_stat=as.numeric(si$zmat[idx, "Indirect"]),
+      total_z_stat=as.numeric(si$zmat[idx, "Total"]),
+      direct_p_value=as.numeric(si$pzmat[idx, "Direct"]),
+      indirect_p_value=as.numeric(si$pzmat[idx, "Indirect"]),
+      total_p_value=as.numeric(si$pzmat[idx, "Total"]),
+      source_path="tables/r_spatialreg_live_impacts.csv",
+      stringsAsFactors=FALSE
+    )
+    impact_rows <- rbind(impact_rows, row)
+  }
+}
+write.csv(coef_rows, file.path(tables_dir, "r_spatialreg_live_coefficients.csv"), row.names=FALSE, fileEncoding="UTF-8")
+write.csv(impact_rows, file.path(tables_dir, "r_spatialreg_live_impacts.csv"), row.names=FALSE, fileEncoding="UTF-8")
+'''.lstrip()
+
+
+def run_r_spatialreg_live_impacts(spec: dict[str, Any], output_dir: Path, data_path: Path) -> dict[str, Any]:
+    tables = output_dir / "tables"
+    scripts = output_dir / "scripts"
+    scripts.mkdir(parents=True, exist_ok=True)
+    tables.mkdir(parents=True, exist_ok=True)
+    r_executable = _r_executable_from_spec(spec)
+    probe = probe_r_backend(["spdep", "spatialreg"], executable=r_executable, timeout=float(spec.get("r_probe_timeout", 60)))
+    if probe.get("status") != "ok":
+        _write_csv(tables / "r_spatialreg_live_impacts.csv", [])
+        return {
+            "status": str(probe.get("status") or "missing_dependency"),
+            "command_status": probe,
+            "rows": [],
+            "impact_rows": [],
+            "impact_validation": canonical_backend_result(
+                backend="r_spatialreg",
+                status="result_missing",
+                available=False,
+                error_code="SDM_IMPACTS_MISSING",
+                message="R spatialreg backend is unavailable; no live direct/indirect/total impacts were produced.",
+            ),
+        }
+
+    command_base, command_source = rscript_command(r_executable)
+    script_path = scripts / "r_spatialreg_live_impacts.R"
+    script_path.write_text(_r_spatialreg_script(), encoding="utf-8")
+    y = str(spec.get("y") or "y")
+    covariates = [str(item) for item in listify(spec.get("x") or ["x1", "x2"])]
+    id_col = str(spec.get("id") or "unit_id")
+    time_col = str(spec.get("time") or "year")
+    lon = str(spec.get("lon") or "lon")
+    lat = str(spec.get("lat") or "lat")
+    output_abs = output_dir.resolve()
+    script_abs = script_path.resolve()
+    data_abs = data_path.resolve()
+    args = [
+        str(data_abs),
+        str(output_abs),
+        y,
+        ",".join(covariates),
+        id_col,
+        time_col,
+        lon,
+        lat,
+        str(int(spec.get("r_spatialreg_k_neighbors", 3))),
+        str(int(spec.get("r_spatialreg_impact_draws", 99))),
+    ]
+    expected = [
+        (tables / "r_spatialreg_live_coefficients.csv").resolve(),
+        (tables / "r_spatialreg_live_impacts.csv").resolve(),
+        (tables / "r_spatialreg_w_metadata.json").resolve(),
+        (tables / "r_spatialreg_w_audit.json").resolve(),
+    ]
+    result = run_backend_command(
+        [*command_base, str(script_abs), *args],
+        expected_outputs=expected,
+        cwd=output_abs,
+        timeout=float(spec.get("r_spatialreg_timeout", 180)),
+        backend="r_spatialreg",
+        adapter="r_spatialreg_live_impacts",
+    )
+    result["command_source"] = command_source
+    impact_path = tables / "r_spatialreg_live_impacts.csv"
+    impact_rows: list[dict[str, Any]] = []
+    if impact_path.exists():
+        with impact_path.open("r", newline="", encoding="utf-8-sig") as handle:
+            impact_rows = list(csv.DictReader(handle))
+    impact_validation = validate_spatial_impacts_table(impact_path) if impact_rows else canonical_backend_result(
+        backend="r_spatialreg",
+        status="result_missing",
+        available=True,
+        error_code="SDM_IMPACTS_MISSING",
+        message="R spatialreg did not produce complete direct/indirect/total impact rows.",
+    )
+    status = str(result.get("status"))
+    if status == "ok" and impact_validation.get("status") != "ok":
+        status = "result_missing"
+        result["status"] = status
+        result["backend_run_status"] = status
+        result["error_code"] = impact_validation.get("error_code") or "SDM_IMPACTS_MISSING"
+        result["message"] = impact_validation.get("message")
+    rows = [
+        {
+            "backend": "r_spatialreg",
+            "model": row.get("model"),
+            "w_name": row.get("w_name"),
+            "status": status,
+            "has_impact_decomposition": impact_validation.get("status") == "ok",
+            "impact_path": "tables/r_spatialreg_live_impacts.csv",
+            "coefficient_path": "tables/r_spatialreg_live_coefficients.csv",
+            "w_metadata_path": "tables/r_spatialreg_w_metadata.json",
+            "w_audit_path": "tables/r_spatialreg_w_audit.json",
+            "error_code": result.get("error_code"),
+            "message": result.get("message"),
+        }
+        for row in impact_rows[:1]
+    ] or [
+        {
+            "backend": "r_spatialreg",
+            "model": "SAR/SDM",
+            "w_name": "R_knn_W",
+            "status": status,
+            "has_impact_decomposition": False,
+            "impact_path": "",
+            "coefficient_path": "",
+            "w_metadata_path": "",
+            "w_audit_path": "",
+            "error_code": result.get("error_code"),
+            "message": result.get("message"),
+        }
+    ]
+    write_canonical_backend_result(output_dir / "backend_results" / "r_spatialreg_live_impacts.json", result)
+    return {
+        "status": status,
+        "command_status": probe,
+        "rows": rows,
+        "impact_rows": impact_rows,
+        "impact_validation": impact_validation,
+        "canonical_backend_result": result,
+        "artifacts": {
+            "coefficients": "tables/r_spatialreg_live_coefficients.csv",
+            "impacts": "tables/r_spatialreg_live_impacts.csv",
+            "w_metadata": "tables/r_spatialreg_w_metadata.json",
+            "w_audit": "tables/r_spatialreg_w_audit.json",
+        },
+    }
 
 
 def run_python_differences_tiny_certification(spec: dict[str, Any], output_dir: Path) -> dict[str, Any]:
@@ -679,7 +1504,7 @@ def run_live_backend_certification(
     repo_root: str | Path | None = None,
 ) -> dict[str, Any]:
     validate_stata_spec(spec)
-    out = Path(output_dir)
+    out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
     (out / "tables").mkdir(exist_ok=True)
     (out / "backend_results").mkdir(exist_ok=True)
@@ -693,7 +1518,8 @@ def run_live_backend_certification(
     rdrobust_result = run_python_rdrobust_tiny_certification(spec, out)
     rddensity_result = run_python_rddensity_tiny_certification(spec, out)
     r_result = run_r_backend_live_probes(spec, out)
-    xsmle_status = _stata_command_available(spec, out, "xsmle")
+    r_spatialreg_result = run_r_spatialreg_live_impacts(spec, out, data_path) if spec.get("run_r_spatialreg", True) else {"status": "skipped", "rows": [], "impact_rows": []}
+    xsmle_result = run_stata_xsmle_live_impacts(spec, out, data_path) if spec.get("run_xsmle", True) else {"status": "skipped", "matrix_rows": [], "impact_rows": []}
     spxt_result = run_stata_spxtregress_live_matrix(spec, out, data_path) if spec.get("run_spxtregress", True) else {"status": "skipped", "matrix_rows": [], "impact_rows": []}
     ppml_result = run_stata_ppmlhdfe_live_certification(spec, out, data_path) if spec.get("run_ppmlhdfe", True) else {"status": "skipped", "rows": []}
 
@@ -706,17 +1532,10 @@ def run_live_backend_certification(
         summary_rows.append({**row, "family": "python_rdd_density_probe"})
     for row in r_result.get("rows") or []:
         summary_rows.append({**row, "family": "r_live_probe"})
-    summary_rows.append(
-        {
-            "family": "stata_live_probe",
-            "backend": "stata_xsmle",
-            "status": xsmle_status.get("status"),
-            "available": xsmle_status.get("available"),
-            "missing_packages": "xsmle" if xsmle_status.get("status") != "ok" else "",
-            "error_code": xsmle_status.get("error_code"),
-            "message": xsmle_status.get("message"),
-        }
-    )
+    for row in r_spatialreg_result.get("rows") or []:
+        summary_rows.append({**row, "family": "r_spatialreg_live_impacts"})
+    for row in xsmle_result.get("matrix_rows") or []:
+        summary_rows.append({**row, "family": "stata_xsmle_live_impacts"})
     for row in spxt_result.get("matrix_rows") or []:
         summary_rows.append({**row, "family": "stata_spxtregress_matrix"})
     for row in ppml_result.get("rows") or []:
@@ -762,6 +1581,15 @@ def run_live_backend_certification(
         and row.get("status") == "ok"
         and row.get("has_impact_decomposition")
         for row in spxt_result.get("matrix_rows") or []
+    ) or any(
+        row.get("backend") == "stata_xsmle"
+        and row.get("model") == "SDM"
+        and row.get("status") == "ok"
+        and row.get("has_impact_decomposition")
+        for row in xsmle_result.get("matrix_rows") or []
+    ) or (
+        r_spatialreg_result.get("status") == "ok"
+        and (r_spatialreg_result.get("impact_validation") or {}).get("status") == "ok"
     )
     if not sdm_ok:
         warnings.append(
@@ -770,11 +1598,16 @@ def run_live_backend_certification(
                 "code": "SDM_IMPACTS_MISSING",
                 "message": "No live SDM run produced a complete direct/indirect/total impact decomposition.",
                 "action": "Do not report SDM indirect effects until the live impact artifact is present.",
-                "affected_artifacts": ["tables/stata_spxtregress_live_impacts.csv"],
+                "affected_artifacts": [
+                    "tables/stata_spxtregress_live_impacts.csv",
+                    "tables/stata_xsmle_live_impacts.csv",
+                    "tables/r_spatialreg_live_impacts.csv",
+                ],
             }
         )
 
     status = "ok" if any(str(row.get("status")) == "ok" for row in summary_rows) else "missing_dependency"
+    rscript_base, rscript_source = rscript_command(_r_executable_from_spec(spec))
     payload = {
         "status": status,
         "data": str(data_path),
@@ -782,19 +1615,29 @@ def run_live_backend_certification(
         "python_rdrobust": rdrobust_result,
         "python_rddensity": rddensity_result,
         "rscript": {
-            "path": shutil.which("Rscript"),
-            "available": bool(shutil.which("Rscript")),
+            "path": " ".join(rscript_base) if rscript_base else None,
+            "available": bool(rscript_base),
+            "source": rscript_source,
         },
         "r_backends": r_result,
-        "stata_xsmle": xsmle_status,
+        "r_spatialreg_live_impacts": r_spatialreg_result,
+        "stata_xsmle": xsmle_result,
         "stata_spxtregress": spxt_result,
         "stata_ppmlhdfe": ppml_result,
         "sdm_live_impact_decomposition_certified": sdm_ok,
         "warnings": warnings,
         "artifacts": {
             "summary": "tables/live_backend_certification_matrix.csv",
+            "xsmle_matrix": "tables/stata_xsmle_live_matrix.csv",
+            "xsmle_impacts": "tables/stata_xsmle_live_impacts.csv",
+            "xsmle_w_metadata": "tables/stata_xsmle_w_metadata.json",
+            "xsmle_w_audit": "tables/stata_xsmle_w_audit.json",
             "spxtregress_matrix": "tables/stata_spxtregress_live_matrix.csv",
             "spxtregress_impacts": "tables/stata_spxtregress_live_impacts.csv",
+            "r_spatialreg_coefficients": "tables/r_spatialreg_live_coefficients.csv",
+            "r_spatialreg_impacts": "tables/r_spatialreg_live_impacts.csv",
+            "r_spatialreg_w_metadata": "tables/r_spatialreg_w_metadata.json",
+            "r_spatialreg_w_audit": "tables/r_spatialreg_w_audit.json",
             "ppmlhdfe": "tables/ppmlhdfe_live_certification.csv",
             "r_probe": "tables/r_live_backend_probes.csv",
             "differences": "tables/python_differences_certification.csv",

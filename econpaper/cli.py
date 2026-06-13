@@ -19,6 +19,14 @@ from .oneclick import run_oneclick
 from .quality_suite import write_quality_suite_manifest
 from .release_gate import write_release_gate
 from .run_validation import write_run_validation
+from .search import paper_store as paper_store_mod
+from .search.boundary_probe import run_boundary_probe
+from .search.deep_search import write_deep_search_pack
+from .search.ingest import write_ingest_pack
+from .search.open_search import write_open_search_pack
+from .search.prescription import write_search_prescription
+from .search.router import recommend_tier
+from .search.verify import write_verification_report
 from .section_writer import write_sections
 from .table_generator import write_publication_table
 from .venue import resolve_venue
@@ -242,6 +250,127 @@ def _cmd_oneclick(args: argparse.Namespace) -> int:
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_search_prescribe(args: argparse.Namespace) -> int:
+    result = write_search_prescription(
+        out_dir=args.out,
+        topic_spec_path=args.topic_spec,
+        intake_profile_path=args.intake,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_search_ingest(args: argparse.Namespace) -> int:
+    result = write_ingest_pack(args.input, out_dir=args.out, created_by=args.created_by)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_search_verify(args: argparse.Namespace) -> int:
+    result = write_verification_report(
+        args.refs,
+        out_dir=args.out,
+        offline=args.offline,
+        mailto=args.mailto,
+        max_calls=args.max_calls,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_search_open(args: argparse.Namespace) -> int:
+    result = write_open_search_pack(
+        out_dir=args.out,
+        prescription_path=args.prescription,
+        queries=args.query,
+        anchor_dois=args.anchor_doi,
+        offline=args.offline,
+        mailto=args.mailto,
+        max_calls=args.max_calls,
+        max_results=args.max_results,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_search_deep(args: argparse.Namespace) -> int:
+    result = write_deep_search_pack(
+        out_dir=args.out,
+        prescription_path=args.prescription,
+        plan_confirmed=args.confirm_plan,
+        offline=args.offline,
+        mailto=args.mailto,
+        max_rounds=args.max_rounds,
+        max_calls=args.max_calls,
+        time_budget_seconds=args.time_budget,
+        extra_records_paths=args.extra_records,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_search_route(args: argparse.Namespace) -> int:
+    result = recommend_tier(args.scenario)
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_search_boundary_probe(args: argparse.Namespace) -> int:
+    result = run_boundary_probe(
+        out_dir=args.out,
+        local_pdf_dir=args.local_pdf_dir,
+        papers_per_trial=args.papers_per_trial,
+        trials=args.trials,
+        codex_timeout=args.codex_timeout,
+        codex_cli=args.codex_cli,
+        trial_ids=args.trial_id,
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_paper_store_add(args: argparse.Namespace) -> int:
+    result = paper_store_mod.add_paper(
+        args.store,
+        citekey=args.citekey,
+        title_en=args.title_en or "",
+        title_zh=args.title_zh or "",
+        pdf_path=args.pdf,
+        paper_md_path=args.paper_md,
+        source_url=args.source_url or "",
+        license_note=args.license_note or "",
+        converter=args.converter or "",
+        converter_version=args.converter_version or "",
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 1 if result.has_hard_blocks else 0
+
+
+def _cmd_paper_store_list(args: argparse.Namespace) -> int:
+    print(json.dumps(paper_store_mod.list_papers(args.store), ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_paper_store_outline(args: argparse.Namespace) -> int:
+    print(json.dumps(paper_store_mod.outline(args.store, args.citekey), ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_paper_store_read(args: argparse.Namespace) -> int:
+    section = paper_store_mod.read_section(args.store, args.citekey, args.section)
+    if section is None:
+        print(json.dumps({"error": f"section not found: {args.citekey}#{args.section}"}, ensure_ascii=False))
+        return 1
+    print(json.dumps(section, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_paper_store_find(args: argparse.Namespace) -> int:
+    hits = paper_store_mod.search_store(args.store, args.query, max_hits=args.max_hits)
+    print(json.dumps(hits, ensure_ascii=False, indent=2))
+    return 0
 
 
 def _cmd_auth_login(args: argparse.Namespace) -> int:
@@ -515,6 +644,132 @@ def build_parser() -> argparse.ArgumentParser:
     oneclick.add_argument("--codex-timeout", type=int, default=180)
     oneclick.add_argument("--no-auth", action="store_true", help="Developer-only escape hatch for offline tests; normal runs should not use it.")
     oneclick.set_defaults(func=_cmd_oneclick)
+
+    search = sub.add_parser(
+        "search",
+        help="Three-tier literature search: L1 prescription, L2 open-API verify/retrieve, L3 deep search.",
+    )
+    search_sub = search.add_subparsers(dest="search_command", required=True)
+
+    prescribe = search_sub.add_parser(
+        "prescribe",
+        help="L1: build a search prescription (concept blocks, bilingual terms, GS/WoS/CNKI query cards).",
+    )
+    prescribe.add_argument("--topic-spec", type=Path, help="Topic spec JSON/YAML with concept blocks and anchors.")
+    prescribe.add_argument("--intake", type=Path, help="Existing intake_profile.json to derive concept blocks from.")
+    prescribe.add_argument("--out", required=True, type=Path)
+    prescribe.set_defaults(func=_cmd_search_prescribe)
+
+    ingest = search_sub.add_parser(
+        "ingest",
+        help="L1 reflow: dedupe RIS/BibTeX/CSV exports into normalized refs.bib + structured-notes skeleton.",
+    )
+    ingest.add_argument("--input", action="append", required=True, type=Path, help="Export file; repeatable.")
+    ingest.add_argument("--created-by", default="author_l1_reflow")
+    ingest.add_argument("--out", required=True, type=Path)
+    ingest.set_defaults(func=_cmd_search_ingest)
+
+    verify = search_sub.add_parser(
+        "verify",
+        help="L2: verify each refs.bib entry exists via Crossref/OpenAlex and normalize metadata.",
+    )
+    verify.add_argument("--refs", required=True, type=Path)
+    verify.add_argument("--out", required=True, type=Path)
+    verify.add_argument("--offline", action="store_true", help="No API calls; entries become unverified_offline.")
+    verify.add_argument("--mailto", help="Contact email for Crossref polite pool / OpenAlex.")
+    verify.add_argument("--max-calls", type=int, default=50)
+    verify.set_defaults(func=_cmd_search_verify)
+
+    open_cmd = search_sub.add_parser(
+        "open",
+        help="L2: execute English query cards on OpenAlex/arXiv with snowball and fail-closed budget/source boundaries.",
+    )
+    open_cmd.add_argument("--prescription", type=Path, help="search_prescription.json from `search prescribe`.")
+    open_cmd.add_argument("--query", action="append", help="Raw keyword query; repeatable.")
+    open_cmd.add_argument("--anchor-doi", action="append", help="Anchor paper DOI for snowball; repeatable.")
+    open_cmd.add_argument("--out", required=True, type=Path)
+    open_cmd.add_argument("--offline", action="store_true")
+    open_cmd.add_argument("--mailto")
+    open_cmd.add_argument("--max-calls", type=int, default=20)
+    open_cmd.add_argument("--max-results", type=int, default=100)
+    open_cmd.set_defaults(func=_cmd_search_open)
+
+    deep = search_sub.add_parser(
+        "deep",
+        help="L3: bilingual deep-search loop (plan-confirm, fan-out rounds, coverage audit, evidence memo).",
+    )
+    deep.add_argument("--prescription", required=True, type=Path)
+    deep.add_argument("--out", required=True, type=Path)
+    deep.add_argument("--confirm-plan", action="store_true", help="Spend budget; without this only the plan is written.")
+    deep.add_argument("--offline", action="store_true")
+    deep.add_argument("--mailto")
+    deep.add_argument("--max-rounds", type=int, default=3)
+    deep.add_argument("--max-calls", type=int, default=40)
+    deep.add_argument("--time-budget", type=float, default=1800.0, help="Hard wall-clock stop in seconds.")
+    deep.add_argument(
+        "--extra-records",
+        action="append",
+        type=Path,
+        help="CNKI/Wanfang export reflowed into the bilingual loop; repeatable.",
+    )
+    deep.set_defaults(func=_cmd_search_deep)
+
+    route = search_sub.add_parser("route", help="Recommend a search tier for a scenario (default L1; never auto-upgrades).")
+    route.add_argument("--scenario", required=True, help="Free-text scenario description.")
+    route.set_defaults(func=_cmd_search_route)
+
+    boundary_probe = search_sub.add_parser(
+        "boundary-probe",
+        help="Auth-gated live boundary test: external Codex child probes arXiv/local PDFs/site access and writes a capability report.",
+    )
+    boundary_probe.add_argument("--out", required=True, type=Path)
+    boundary_probe.add_argument("--local-pdf-dir", type=Path, default=Path(r"D:\论文库中文1pdf"))
+    boundary_probe.add_argument("--papers-per-trial", type=int, default=30)
+    boundary_probe.add_argument("--trials", type=int, default=3)
+    boundary_probe.add_argument("--codex-timeout", type=int, default=900)
+    boundary_probe.add_argument("--codex-cli", type=Path, help="Explicit real Codex CLI path; normally discovered from auth status.")
+    boundary_probe.add_argument("--trial-id", action="append", help="Run only this boundary trial id; repeatable.")
+    boundary_probe.set_defaults(func=_cmd_search_boundary_probe)
+
+    paper_store = sub.add_parser(
+        "paper-store",
+        help="Local Paper Store: land legally obtained PDFs/markdown and read them by section.",
+    )
+    store_sub = paper_store.add_subparsers(dest="paper_store_command", required=True)
+
+    store_add = store_sub.add_parser("add", help="Land a paper (PDF and/or converted paper.md) under its citekey.")
+    store_add.add_argument("--store", required=True, type=Path)
+    store_add.add_argument("--citekey", required=True)
+    store_add.add_argument("--title-en")
+    store_add.add_argument("--title-zh")
+    store_add.add_argument("--pdf", type=Path)
+    store_add.add_argument("--paper-md", type=Path, help="LLM-readable Markdown produced by MinerU/Marker/PyMuPDF.")
+    store_add.add_argument("--source-url")
+    store_add.add_argument("--license-note")
+    store_add.add_argument("--converter", help="Tool that produced paper.md (e.g. mineru).")
+    store_add.add_argument("--converter-version")
+    store_add.set_defaults(func=_cmd_paper_store_add)
+
+    store_list = store_sub.add_parser("list", help="List stored papers with status.")
+    store_list.add_argument("--store", required=True, type=Path)
+    store_list.set_defaults(func=_cmd_paper_store_list)
+
+    store_outline = store_sub.add_parser("outline", help="Show a paper's heading tree from paper.struct.json.")
+    store_outline.add_argument("--store", required=True, type=Path)
+    store_outline.add_argument("--citekey", required=True)
+    store_outline.set_defaults(func=_cmd_paper_store_outline)
+
+    store_read = store_sub.add_parser("read", help="Read one section by anchor (e.g. 5.2) or title substring.")
+    store_read.add_argument("--store", required=True, type=Path)
+    store_read.add_argument("--citekey", required=True)
+    store_read.add_argument("--section", required=True)
+    store_read.set_defaults(func=_cmd_paper_store_read)
+
+    store_find = store_sub.add_parser("find", help="Keyword search across stored paper.md text layers.")
+    store_find.add_argument("--store", required=True, type=Path)
+    store_find.add_argument("--query", required=True)
+    store_find.add_argument("--max-hits", type=int, default=20)
+    store_find.set_defaults(func=_cmd_paper_store_find)
 
     auth = sub.add_parser(
         "auth",

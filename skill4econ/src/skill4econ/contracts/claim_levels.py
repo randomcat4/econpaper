@@ -34,6 +34,7 @@ DIAGNOSTIC_METHOD_HINTS = {
     "spatial_panel_preflight",
     "export_log_manifest",
     "live_backend_certification",
+    "w3_inference_audit",
     "flagship_slow_matrix",
     "spatial_weights_factory",
     "spatial_w_audit",

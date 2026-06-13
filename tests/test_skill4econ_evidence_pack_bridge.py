@@ -16,6 +16,7 @@ from econpaper.evidence import write_evidence_ledger
 from econpaper.tiering import evaluate_pack_tier
 from skill4econ.core import make_run_context, read_spec
 from skill4econ.contracts.artifact_manifest import write_artifact_manifest
+from skill4econ.python_wrappers import w3_inference_audit
 from skill4econ.workflows import did_paper_run
 
 
@@ -140,6 +141,53 @@ def test_skill4econ_rdd_manifest_exposes_rdd_artifact_types(tmp_path: Path) -> N
         "rdd_diagnostics",
         "rdd_density_test",
         "covariate_continuity",
+    } <= artifact_types
+
+
+def test_w3_inference_audit_feeds_econpaper_evidence_pack_types(tmp_path: Path) -> None:
+    spec = {
+        "wcr": {
+            "y": [1.0, 1.1, 1.2, 1.3, 1.4, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2],
+            "X": [[1, idx / 10] for idx in range(12)],
+            "clusters": [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4],
+            "R": [0, 1],
+            "B": 29,
+            "seed": 7,
+        },
+        "conley": {
+            "y": [1.0, 1.2, 1.4, 1.5, 1.7, 1.9, 2.0, 2.1],
+            "X": [[1, idx / 7] for idx in range(8)],
+            "lon": [idx * 0.01 for idx in range(8)],
+            "lat": [idx * 0.01 for idx in range(8)],
+            "theta_km": 20,
+            "terms": ["const", "x"],
+        },
+        "romano_wolf": {
+            "stat_vector": [1.5, 2.0],
+            "bootstrap_draws": [[0.5, 1.1], [1.2, 1.4], [2.2, 0.9], [0.7, 2.4]] * 8,
+            "labels": ["h1", "h2"],
+        },
+        "mop_effective_f": {
+            "effective_f": 16.0,
+            "critical_value": 15.49,
+            "source_backend": "stata_weakivtest",
+        },
+    }
+    ctx = make_run_context("w3_inference_audit", "python", spec, "run", str(tmp_path / "runs"))
+    manifest = w3_inference_audit(ctx)
+    assert manifest["status"] == "ok"
+
+    pack = tmp_path / "econpaper_pack"
+    result = write_evidence_ledger(run_dir=ctx.run_dir, out_dir=pack)
+    evidence_pack = json.loads((pack / "evidence_pack.json").read_text(encoding="utf-8"))
+    artifact_types = {item["artifact_type"] for item in evidence_pack["artifacts"]}
+
+    assert result.has_hard_blocks is False
+    assert {
+        "w3_null_imposed_wcr",
+        "w3_conley",
+        "w3_romano_wolf",
+        "w3_effective_f",
     } <= artifact_types
 
 

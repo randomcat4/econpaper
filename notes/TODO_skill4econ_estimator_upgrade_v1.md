@@ -166,12 +166,42 @@ finishing inference alone; promotion requires the protocol at the end).
 
 ## Stage 3 — P1: modern staggered DID in Python
 
+Backend setup note: before testing Stage 3 or Stata-first staggered DID, read
+`skill4econ/docs/MODERN_DID_BACKEND_SETUP.md`. It records the required Python
+packages (`differences`, `pyfixest`), Stata packages (`csdid`, `drdid`,
+`reghdfe`, `did_imputation`, `ftools`, `require`), one-pass install commands, and the
+verification checks that distinguish a real ATT(g,t) main estimate from TWFE
+fallback output.
+
+2026-06-12 local backend audit:
+
+- Python packages are installed and importable on this machine:
+  `differences==0.3.0`, `pyfixest==0.60.0`, `statsmodels==0.14.6`,
+  `linearmodels==5.3`.
+- Stata packages are installed and discoverable on this machine:
+  `ftools`, `require`, `reghdfe`, `drdid`, `csdid`, `did_imputation`.
+- Stata `csdid` is now a real main-estimator path on the full JEL-DiD data:
+  `cs_did_attgt` succeeded with ATT `6.8909249` and SE `2.9504628`.
+- Stata `did_imputation` now runs on the full JEL-DiD data with standard errors
+  when the spec sets `autosample = true`, `did_imputation_maxit = 1000`, and
+  `did_imputation_tol = 0.0001`. Do not use `nose` for a paper-grade robustness
+  result.
+- Python `cs_did_attgt_py` now runs the real `differences.ATTgt` backend against
+  `differences==0.3.0`; the adapter uses `cohort_column`, preserves never-treated
+  controls instead of dropping missing/zero gvar, and no longer lets an optional
+  pretrend diagnostic exception fail the main estimate.
+- Final no-fallback modern-only full-data run:
+  `reports/blind_raw_runs/jel_did_full_data/validated_run_modern_only_no_fallback_after_twfe_warning_fix/did_paper_run/20260612T120815Z-60cd9830`.
+  It selected only `cs_did_attgt` and `did_imputation`; TWFE and TWFE event-study
+  were excluded. Strict validation passed. Remaining warnings are data-support
+  caveats: unbalanced panel, weak pre-period support, and short post-period support.
+
 ### T3.1 Dependency-gated Callaway–Sant'Anna adapter (real package)
 
-- New file: `src/skill4econ/adapters/python/cs_did.py`. Backend choice (in order of
-  preference): `pyfixest` (if its `did` module provides ATT(gt)/event aggregation) or
-  the `differences` package. Decide by checking what installs cleanly on Python 3.11/3.12
-  Windows; record the decision in the module docstring.
+- New file: `src/skill4econ/adapters/python/cs_did.py`. Backend choice: use
+  `differences.ATTgt` for ATT(g,t). `pyfixest` remains installed and useful for
+  other DID/event-study tooling, but it is not routed as sufficient for this
+  adapter unless a future patch explicitly wires a modern ATT(g,t) API.
 - Behavior: spec mirrors Stata `cs_did_attgt` (y, id, time, gvar, control_group =
   never_treated|not_yet_treated, covariates). Outputs: `model_table.csv` with ATT(gt)
   aggregates + event-study rows, `event_study.csv`, `pretrend_test.json`.

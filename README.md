@@ -34,6 +34,7 @@ product/auth smoke checkpoint commit: 152ebe6 feat: harden v3 write smoke and au
 ## Repository Layout
 
 - `econpaper/`: v3 Python package and CLI.
+- `econpaper/search/`: three-tier literature search (L1 prescription, L2 open-API verify/retrieve, L3 deep search) and the Paper Store.
 - `tests/`: v3 unit and smoke-style tests.
 - `econpaper_roadmap_v3/`: roadmap, schemas, checklists, and external review prompt.
 - `EasyPaper/`: upstream/downstream manuscript-generation reference layer and legacy integration surface.
@@ -52,7 +53,7 @@ python -m pytest -q
 Expected at the latest checkpoint:
 
 ```text
-118 passed
+209 passed
 ```
 
 ## Core CLI
@@ -87,8 +88,73 @@ python -m econpaper.cli release-gate `
   --human-eval human_eval.json `
   --out release_gate_pack
 
+python -m econpaper.cli oneclick `
+  --run-dir path\to\skill4econ_run `
+  --intake intake_profile.json `
+  --refs refs.bib `
+  --venue aea `
+  --out-root reports\oneclick
+
+python -m econpaper.cli oneclick `
+  --case raw_data_probe `
+  --raw-data-dir path\to\raw_data `
+  --intake intake_profile.json `
+  --refs refs.bib `
+  --venue aea `
+  --out-root reports\oneclick
+
 python -m econpaper.cli quality-suite --out quality_suite_pack
 ```
+
+`oneclick` is auth-gated by default and accepts either a registered smoke `--case`
+or custom project inputs. Raw-data-only directories are inventoried and then
+fail closed unless a validated `skill4econ` run or structured `model_table` is
+supplied.
+
+## Search Tiers And Paper Store
+
+Implements `notes/DESIGN_search_tiers_v1.md`: three literature-search tiers whose
+only legitimate output is structured notes (`external_literature_notes.json` +
+normalized `refs.bib`) feeding the unchanged citation-safety gates. The default
+tier is L1; upgrading is always an explicit choice.
+
+```powershell
+# Tier routing (recommends, never auto-upgrades)
+python -m econpaper.cli search route --scenario "投稿前的系统性文献定位"
+
+# L1: prescription-driven search (GS + WoS + CNKI query cards; human executes)
+python -m econpaper.cli search prescribe --topic-spec topic_spec.json --intake intake_profile.json --out search_pack
+
+# L1 reflow: dedupe RIS/BibTeX/CSV exports into refs.bib + notes skeleton
+python -m econpaper.cli search ingest --input cnki_export.ris --input zotero.bib --out search_pack
+
+# L2 verification: per-entry existence/metadata checks via Crossref/OpenAlex
+python -m econpaper.cli search verify --refs refs.bib --mailto you@example.org --out verify_pack
+
+# L2 retrieval: run English query cards on OpenAlex/arXiv with snowball + budget caps
+python -m econpaper.cli search open --prescription search_pack\search_prescription.json --out open_pack
+
+# L3 deep search: plan first (no budget spent), then confirm to run the loop
+python -m econpaper.cli search deep --prescription search_pack\search_prescription.json --out deep_pack
+python -m econpaper.cli search deep --prescription search_pack\search_prescription.json --out deep_pack --confirm-plan
+
+# Boundary probe: external Codex child process tests arXiv/local PDF/site-access limits
+python -m econpaper.cli search boundary-probe --out reports\boundary_probe `
+  --local-pdf-dir D:\论文库中文1pdf --trials 3 --papers-per-trial 30
+
+# Paper Store: land legally obtained full texts and read them by section
+python -m econpaper.cli paper-store add --store paper_store --citekey chen2021lowcarbon `
+  --title-zh 低碳城市试点与企业绿色创新 --title-en "Low-Carbon City Pilots and Green Innovation" `
+  --pdf paper.pdf --paper-md converted.md --converter mineru --converter-version 2.1.0
+python -m econpaper.cli paper-store read --store paper_store --citekey chen2021lowcarbon --section 5.2
+```
+
+A fabricated DOI (one Crossref cannot resolve) is a non-overridable hard block;
+an unconfirmed title is flag-and-confirm. Offline runs, source outages, budget
+exhaustion, and L3 internal errors are explicit boundary/fail-closed states,
+not fallback successes. PDF→Markdown conversion is delegated to external tools
+(MinerU first for CJK layouts); the store records the converter and version in
+each paper's `meta.json`.
 
 ## Auth Commands
 

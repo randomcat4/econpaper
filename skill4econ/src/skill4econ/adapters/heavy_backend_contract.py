@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import time
@@ -133,15 +134,46 @@ def write_canonical_backend_result(path: str | Path, result: dict[str, Any]) -> 
     target.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def rscript_command(executable: str | Path | Sequence[str | Path] | None = None) -> tuple[list[str], str]:
+    if executable and not isinstance(executable, (str, Path)):
+        return [str(item) for item in executable], "argument_sequence"
+    command_env = os.environ.get("SKILL4ECON_RSCRIPT_COMMAND")
+    if command_env:
+        return shlex.split(command_env), "env:SKILL4ECON_RSCRIPT_COMMAND"
+    explicit_rscript = executable or os.environ.get("SKILL4ECON_RSCRIPT")
+    rscript = str(explicit_rscript or "")
+    if rscript:
+        return [rscript], "argument" if executable else "env:SKILL4ECON_RSCRIPT"
+    conda = shutil.which("conda")
+    conda_env = os.environ.get("SKILL4ECON_R_CONDA_ENV") or "econpaper-r"
+    if conda and _conda_env_exists(conda, conda_env):
+        return [conda, "run", "-n", conda_env, "Rscript"], f"conda:{conda_env}"
+    rscript = str(shutil.which("Rscript") or "")
+    if not rscript:
+        return [], "missing"
+    return [rscript], "PATH"
+
+
+def _conda_env_exists(conda_executable: str, env_name: str) -> bool:
+    try:
+        path = Path(conda_executable).resolve()
+    except Exception:
+        return False
+    candidates: list[Path] = []
+    for parent in path.parents:
+        candidates.append(parent / "envs" / env_name)
+    return any(candidate.exists() for candidate in candidates)
+
+
 def probe_r_backend(
     packages: Iterable[str],
     *,
-    executable: str | Path | None = None,
+    executable: str | Path | Sequence[str | Path] | None = None,
     timeout: float = 30,
 ) -> dict[str, Any]:
     package_list = [str(item) for item in packages if str(item)]
-    rscript = str(executable or os.environ.get("SKILL4ECON_RSCRIPT") or shutil.which("Rscript") or "")
-    if not rscript:
+    command_base, command_source = rscript_command(executable)
+    if not command_base:
         return canonical_backend_result(
             backend="r",
             status="backend_unavailable",
@@ -156,7 +188,7 @@ def probe_r_backend(
             status="ok",
             available=True,
             message="Rscript executable found; no package probe requested.",
-            extra={"executable": rscript, "packages": []},
+            extra={"executable": " ".join(command_base), "command_source": command_source, "packages": []},
         )
     quoted = ", ".join(json.dumps(item) for item in package_list)
     expr = (
@@ -165,7 +197,7 @@ def probe_r_backend(
         "if (length(missing)) { cat(paste(missing, collapse=',')); quit(status=42) }; "
         "cat('ok')"
     )
-    command = [rscript, "-e", expr]
+    command = [*command_base, "-e", expr]
     start = time.perf_counter()
     try:
         proc = subprocess.run(
@@ -188,7 +220,7 @@ def probe_r_backend(
             stdout=exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout,
             stderr=exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr,
             elapsed_seconds=time.perf_counter() - start,
-            extra={"executable": rscript, "packages": package_list},
+            extra={"executable": " ".join(command_base), "command_source": command_source, "packages": package_list},
         )
     elapsed = time.perf_counter() - start
     if proc.returncode == 0:
@@ -202,7 +234,7 @@ def probe_r_backend(
             stdout=proc.stdout,
             stderr=proc.stderr,
             elapsed_seconds=elapsed,
-            extra={"executable": rscript, "packages": package_list},
+            extra={"executable": " ".join(command_base), "command_source": command_source, "packages": package_list},
         )
     missing_text = (proc.stdout or "").strip()
     missing_packages = [item.strip() for item in missing_text.split(",") if item.strip()] or package_list
@@ -217,7 +249,12 @@ def probe_r_backend(
         stdout=proc.stdout,
         stderr=proc.stderr,
         elapsed_seconds=elapsed,
-        extra={"executable": rscript, "packages": package_list, "missing_packages": missing_packages},
+        extra={
+            "executable": " ".join(command_base),
+            "command_source": command_source,
+            "packages": package_list,
+            "missing_packages": missing_packages,
+        },
     )
 
 

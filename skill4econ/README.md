@@ -78,6 +78,11 @@ Stata example:
 conda run -n base python -m skill4econ.cli run --engine stata --method stata_preflight --run
 ```
 
+Modern staggered DID backends require external Stata/Python packages such as
+`csdid`, `drdid`, `reghdfe`, `did_imputation`, `differences`, and `pyfixest`.
+See [`docs/MODERN_DID_BACKEND_SETUP.md`](docs/MODERN_DID_BACKEND_SETUP.md) for
+one-pass install and verification commands.
+
 Smoke test:
 
 ```powershell
